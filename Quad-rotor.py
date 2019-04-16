@@ -20,8 +20,12 @@ from numpy import cos as cos
 from numpy import tan as tan
 from navpy import angle2quat
 import matplotlib.pyplot as plt
-pi = np.pi
+import mpl_toolkits.mplot3d.axes3d as p3
+import matplotlib.animation as animation
 
+pi = np.pi
+PLOT = False
+PLOT_TRAJ = True
 
 def normalize( vector ):
     # normalise vector
@@ -182,7 +186,7 @@ w = wHover
 PWM = PWM_hover
 
 # Initial Setpoint
-eulAngSP = np.matrix('0; -0.1; 0', dtype = float)
+eulAngSP = np.matrix('0; -0.2; 0', dtype = float)
 rateSP = np.matrix('0; 0; 0', dtype = float)
 vzSP = 0.
 
@@ -191,7 +195,7 @@ f = 1000.
 dt = 1. / f
 
 tstart = 0.
-tend = 2.
+tend = 6.
 time = np.linspace(tstart,tend,(int)(tend*f))
 
 n = len(time)
@@ -221,13 +225,14 @@ u2motor = np.matrix( ' 1  1  1 -1;'
 
 log = np.zeros([30,n])
 
-#for t in time:
-for t in range(0,2000):
+for t in time:
+#for t in range(0,2000):
 # loop
 
     # no small angle assumptions, nonlinear model
     # TODO, include motor inertias effects
-
+    if(t > 3):
+        eulAngSP = np.matrix('-0.1; 0.1; 0', dtype=float)
     eulAng = state[3:6]
     vel = state[6:9]
     omega = state[9:12]
@@ -308,7 +313,7 @@ for t in range(0,2000):
     eulAng_dot = np.dot(trans, omega)
     fb_temp = np.reshape(F_b[:, i], (3, 1))
 
-    velDot = np.matrix([[0.], [0.], [g]]) + np.dot(rot_matrix3d(eulAng),np.matrix([[0.], [0.], [-f_trq[0]]]) ) / m - Fd * vel #+  fb_temp/ m
+    velDot = np.matrix([[0.], [0.], [g]]) + np.dot(rot_matrix3d(eulAng),np.matrix([[0.], [0.], [-f_trq[0]]]) ) / m - Fd * vel +  fb_temp/ m
     Iomega = np.dot(I, omega)
     invI =  LA.inv(I) #<<< ---
 
@@ -316,7 +321,7 @@ for t in range(0,2000):
     x_product = np.transpose(np.cross(np.transpose(omega), np.transpose(Iomega)))
     trqb_temp = np.reshape(Trq_b[:, i],(3,1))
     #print(np.dot(invI, f_trq[1:4] ))
-    omegaDot = np.dot(invI,(-1.*x_product)) + np.dot(invI, f_trq[1:4] )  #+ np.dot(invI,trqb_temp)
+    omegaDot = np.dot(invI,(-1.*x_product)) + np.dot(invI, f_trq[1:4] )  + np.dot(invI,trqb_temp)
 
     stateDot =np.vstack([Xdot, eulAng_dot, velDot, omegaDot])
 
@@ -336,7 +341,6 @@ for t in range(0,2000):
 # Extracting Sim data
 X = log[0:3,:]
 eulAng = log[3:6,:]
-#print(eulAng)
 vel = log[6:9,:]
 angvel = log[9:12,:] # omega
 #velDot = log[12:16,:]
@@ -346,94 +350,147 @@ velDot = log[21:24,:]
 eulAngSP = log[24:27,:]
 rateSP = log[27:30,:]
 
-plt.figure(1)
-plt.plot(time, X[0,:],'r',label='X',linewidth= 0.5)
-plt.plot(time, X[1,:],'g',label='Y',linewidth= 0.5)
-plt.plot(time, X[2,:],'b',label='Z',linewidth= 0.5)
-plt.legend()
-plt.title('Pos')
+if (PLOT == True):
+    plt.figure(1)
+    plt.plot(time, X[0,:],'r',label='X',linewidth= 0.5)
+    plt.plot(time, X[1,:],'g',label='Y',linewidth= 0.5)
+    plt.plot(time, X[2,:],'b',label='Z',linewidth= 0.5)
+    plt.legend()
+    plt.title('Pos')
 
 
-plt.figure(2)
-plt.plot(time, vel[0,:],'r',label='X',linewidth= 0.5)
-plt.plot(time, vel[1,:],'g',label='Y',linewidth= 0.5)
-plt.plot(time, vel[2,:],'b',label='Z',linewidth= 0.5)
-plt.legend()
-plt.title('Vel')
+    plt.figure(2)
+    plt.plot(time, vel[0,:],'r',label='X',linewidth= 0.5)
+    plt.plot(time, vel[1,:],'g',label='Y',linewidth= 0.5)
+    plt.plot(time, vel[2,:],'b',label='Z',linewidth= 0.5)
+    plt.legend()
+    plt.ylabel("Velocity(m/s)")
+    plt.xlabel("Time(s)")
+    plt.title('Vel')
 
-plt.figure(3)
-plt.plot(time, eulAng[0,:],'r',label='Roll',linewidth= 0.5)
-plt.plot(time, eulAng[1,:],'g',label='Pitch',linewidth= 0.5)
-plt.plot(time, eulAng[2,:],'b',label='Yaw',linewidth= 0.5)
-plt.plot(time, eulAngSP[0,:],'r--',label='Roll SP',linewidth= 0.5)
-plt.plot(time, eulAngSP[1,:],'g--',label='Pitch SP',linewidth= 0.5)
-plt.plot(time, eulAngSP[2,:],'b--',label='Yaw SP',linewidth= 0.5)
-plt.legend()
-plt.title('Euler Angles')
+    plt.figure(3)
+    plt.plot(time, eulAng[0,:],'r',label='Roll',linewidth= 0.5)
+    plt.plot(time, eulAng[1,:],'g',label='Pitch',linewidth= 0.5)
+    plt.plot(time, eulAng[2,:],'b',label='Yaw',linewidth= 0.5)
+    plt.plot(time, eulAngSP[0,:],'r--',label='Roll SP',linewidth= 0.5)
+    plt.plot(time, eulAngSP[1,:],'g--',label='Pitch SP',linewidth= 0.5)
+    plt.plot(time, eulAngSP[2,:],'b--',label='Yaw SP',linewidth= 0.5)
+    plt.ylabel("Angle(rad)")
+    plt.xlabel("Time(s)")
+    plt.legend(loc='upper right')
+    plt.title('Euler Angles')
 
 
-plt.figure(4)
-plt.plot(time, u[0,:],label='Z',linewidth= 0.5)
-plt.plot(time, u[1,:],label='R',linewidth= 0.5)
-plt.plot(time, u[2,:],label='P',linewidth= 0.5)
-plt.plot(time, u[3,:],label='Y',linewidth= 0.5)
-plt.legend()
-plt.title('Cmd')
+    plt.figure(4)
+    plt.plot(time, u[0,:],label='Z',linewidth= 0.5)
+    plt.plot(time, u[1,:],label='R',linewidth= 0.5)
+    plt.plot(time, u[2,:],label='P',linewidth= 0.5)
+    plt.plot(time, u[3,:],label='Y',linewidth= 0.5)
+    plt.legend()
+    plt.title('Cmd')
 
-plt.figure(5)
-plt.plot(time, PWM[0,:])
-plt.plot(time, PWM[1,:])
-plt.plot(time, PWM[2,:])
-plt.plot(time, PWM[3,:])
-plt.title('PWM')
+    plt.figure(5)
+    plt.plot(time, PWM[0,:])
+    plt.plot(time, PWM[1,:])
+    plt.plot(time, PWM[2,:])
+    plt.plot(time, PWM[3,:])
+    plt.title('PWM')
 
-plt.figure(6)
-plt.plot(time, velDot[0,:])
-plt.plot(time, velDot[1,:])
-plt.plot(time, velDot[2,:])
-plt.title('Linear Accel')
-plt.figure(7)
-plt.plot(time, rateSP[0,:],label='Roll',linewidth= 0.5)
-plt.plot(time, rateSP[1,:],label='Pitch',linewidth= 0.5)
-plt.plot(time, rateSP[2,:],label='Yaw',linewidth= 0.5)
-plt.legend()
-plt.title('Rate Sp')
-'''
-figure
-plot(time, vel(1,:))
-hold
-on
-plot(time, vel(2,:))
-plot(time, vel(3,:))
-title('Vel')
-legend('x', 'y', 'z');
+    plt.figure(6)
+    plt.plot(time, velDot[0,:])
+    plt.plot(time, velDot[1,:])
+    plt.plot(time, velDot[2,:])
+    plt.title('Linear Accel')
+    plt.figure(7)
+    plt.plot(time, rateSP[0,:],label='Roll',linewidth= 0.5)
+    plt.plot(time, rateSP[1,:],label='Pitch',linewidth= 0.5)
+    plt.plot(time, rateSP[2,:],label='Yaw',linewidth= 0.5)
+    plt.legend()
+    plt.title('Rate Sp')
 
-figure
-plot(time, eulAng(1,:))
-hold
-on
-plot(time, eulAng(2,:))
-plot(time, eulAng(3,:))
-title('Euler Angles')
-legend('roll', 'pitch', 'yaw');
-% axis(-2 * pi
-2 * pi )
-% figure
-  % plot(time, testVar)
-  % title('test')
+if (PLOT_TRAJ == True):
+    ## 3d path
+    wing1o = np.matrix('0; 0; 0', dtype = float)
+    wing1edge =  np.array([[.5],[-.5],[0.]])
+    wing2o = np.matrix('0; 0; 0', dtype = float)
+    wing2edge = np.array([[.5],[.5],[0.]])  #np.matrix('1; 1; 0', dtype = float)
+    wing3o = np.matrix('0; 0; 0', dtype = float)
+    wing3edge = np.array([[-.5],[.5],[0.]]) # np.matrix('-1; 1; 0', dtype = float)
+    wing4o = np.matrix('0; 0; 0', dtype = float)
+    wing4edge = np.array([[-.5],[-.5],[0.]]) # np.matrix('-1; -1; 0', dtype = float)
 
-  % %
-  figure
-plot(time, testVar(1,:))
-hold
-on
-plot(time, testVar(2,:))
-plot(time, testVar(3,:))
-plot(time, testVar(4,:))
-legend('1', '2', '3', '4')
-title('PWM')
+    def update_traj(num, dat, lines):
+        for line in lines:
+            # NOTE: there is no .set_data() for 3 dim data...
+            line.set_data(dat[0:2, :num])
+            line.set_3d_properties(dat[2, :num])
+        return lines
 
-% %
-visualization3(log, 0)
-'''
+    def update_wings(num, dat, lines):
+        for line in lines:
+            # NOTE: there is no .set_data() for 3 dim data...
+            x = np.array(dat[0:2,0,num])
+            y = np.array(dat[0:2,1,num])
+            line.set_data(x, y)
+            line.set_3d_properties(dat[0:2,2,num])
+        return lines
+    # Attaching 3D axis to the figure
+    fig = plt.figure()
+    ax = p3.Axes3D(fig)
+
+
+    # Fifty lines of random 3-D lines
+    data = X
+
+    #data = [Gen_RandLine(25, 3) for index in range(1)]
+    data = np.array(data)
+    #data1  = np.array([data + wing1edge, data + wing3edge])
+    #data2  = np.array([data + wing2edge, data + wing4edge])
+    #print(data1.shape)
+
+    n_steps = (tend* f)
+    plot_frames = (int)(n_steps/50)
+    traj_data = np.zeros([3,plot_frames])
+    wing_data1 = np.zeros([2,3,plot_frames])
+    wing_data2 = np.zeros([2,3,plot_frames])
+    i = 0
+    for j in range(0,plot_frames):
+        traj_data[:,j] = data[:,i]
+        trag_date_n = np.reshape(traj_data[:,j],(3,1))
+        eul = np.reshape(eulAng[:,i],(3,1))
+        wing1 = trag_date_n + np.dot(rot_matrix3d(eul),wing1edge)
+        wing2 = trag_date_n + np.dot(rot_matrix3d(eul),wing2edge)
+        wing3 = trag_date_n + np.dot(rot_matrix3d(eul),wing3edge)
+        wing4 = trag_date_n + np.dot(rot_matrix3d(eul),wing4edge)
+        wing_data1[0,:, j] = wing1.reshape(3)
+        wing_data1[1,:, j] = wing3.reshape(3)
+        wing_data2[0,:, j] = wing2.reshape(3)
+        wing_data2[1,:, j] = wing4.reshape(3)
+        i = i + 50
+
+    lines = ax.plot(traj_data[0, 0:1], traj_data[1, 0:1], traj_data[2, 0:1], 'b--')
+    lines1 = ax.plot(wing_data1[0:2, 0, 0], wing_data1[0:2, 1, 0], wing_data1[0:2, 2, 0], 'r')
+    lines2 = ax.plot(wing_data1[0:2, 0, 0], wing_data1[0:2, 1, 0], wing_data1[0:2, 2, 0], 'g')
+
+    # Setting the axes properties
+    ax.set_xlim3d([-1.0, 8.0])
+    ax.set_xlabel('X')
+
+    ax.set_ylim3d([-4.0, 4.0])
+    ax.set_ylabel('Y')
+
+    ax.set_zlim3d([-4.0, 4.0])
+    ax.set_zlabel('Z')
+
+    ax.set_title('Trajectory')
+
+    # Creating the Animation object
+    line_ani = animation.FuncAnimation(fig, update_traj, plot_frames, fargs=(traj_data, lines),
+                                       interval=1, blit=False)
+    line_ani1 = animation.FuncAnimation(fig, update_wings, plot_frames, fargs=(wing_data1, lines1),
+                                       interval=1, blit=False)
+    line_ani2 = animation.FuncAnimation(fig, update_wings, plot_frames, fargs=(wing_data2, lines2),
+                                       interval=1, blit=False)
+#########################
+
 plt.show()
