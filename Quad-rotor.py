@@ -14,6 +14,7 @@
 # |
 # *----y
 import numpy as np
+#import quaternion
 from numpy import linalg as LA
 from numpy import sin as sin
 from numpy import cos as cos
@@ -22,9 +23,11 @@ from navpy import angle2quat
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib.animation as animation
+from PIDController import PIDController
+from transforms3d import euler
 
 pi = np.pi
-PLOT = False
+PLOT = True
 PLOT_TRAJ = True
 
 def normalize( vector ):
@@ -37,7 +40,7 @@ def normalize( vector ):
 
 def pid_con(sp, fb, Kp, sat, Kd):
     #TODO: optional argumanets and add PI
-# PID
+    # PID
     dt = 1. / 1000.
     err = sp - fb
     pgain = Kp * (err)
@@ -59,7 +62,7 @@ def quar_axis_error(eulAngSP, eulAng):
 
     # Euler to quart
     #print(eulAngSP)
-    setpoints_q0, setpoint_qvec = angle2quat(eulAngSP[0,0], eulAngSP[1,0], eulAngSP[2,0])
+    setpoints_q0, setpoint_qvec = angle2quat(eulAngSP[0,0], eulAngSP[1,0], eulAngSP[2,0]) # ZYX default rotation
     state_q0, state_qvec = angle2quat(eulAng[0,0], eulAng[1,0], eulAng[2,0])
 
     a1 = setpoints_q0
@@ -67,12 +70,12 @@ def quar_axis_error(eulAngSP, eulAng):
     c1 = setpoint_qvec[1]
     d1 = setpoint_qvec[2]
     a2 = state_q0
-    b2 = state_qvec[0] # Conjugate  minus
-    c2 = state_qvec[1] # conjugate   minus
-    d2 = state_qvec[2] # Conjugate  minus
+    b2 = state_qvec[0] # Conjugate minus
+    c2 = state_qvec[1] # conjugate minus
+    d2 = state_qvec[2] # Conjugate minus
     state_quat_conjugate = np.matrix([a2, -b2, -c2, -d2])
 
-    # Quaternion multiplication q_set * (q_state)'
+    # Quaternion multiplication q_set * (q_state)' State - target
     quaternion_error_W = np.zeros([4,1])
     quaternion_error_W[0] = a1 * (a2) - b1 * (-b2) - c1 * (-c2) - d1 * (-d2)
     quaternion_error_W[1] = a1 * (-b2) + b1 * a2 + c1 * (-d2) - d1 * (-c2)
@@ -98,17 +101,6 @@ def T(eulAng ):
          [0., cos(phi), -sin(phi)],
          [0., sin(phi)/cos(theta), cos(phi)/cos(theta)]])
     return t
-
-def Tinv(eulAng ):
-#  Transformes omega in body frame to NED body centered frame
-
-    phi = eulAng[0,0]
-    theta = eulAng[1,0]
-    psi =  eulAng[2,0]
-    t = np.matrix([[1., sin(phi)* tan(theta), cos(phi)*tan(theta)],
-         [0., cos(phi), -sin(phi)],
-         [0., sin(phi)/cos(theta), cos(phi)/cos(theta)]])
-    return LA.inv(t)
 
 def quat2rotm(q):
     s = 1.
@@ -157,7 +149,7 @@ m = 1.157
 Ixx = 0.014
 Iyy = 0.014
 Izz = 2. * 0.014
-I = np.matrix([[Ixx, 0, 0],
+I = np.array([[Ixx, 0, 0],
               [0, Iyy, 0],
               [0, 0, Izz]])
 
@@ -166,28 +158,30 @@ Cl = 7.4e-05 # Thrust to RPS ^ 2
 Cd = 6.5e-07
 Fd = 0.5694 # drag force coeff of drone assuming it moves at 2 m / s  at 0 and angle of 0.1 %
 
-prop2f_trqMatrix = np.matrix([[Cl, Cl, Cl, Cl],
+prop2f_trqMatrix = np.array([[Cl, Cl, Cl, Cl],
                              [Cl * lp, -Cl * lp, -Cl * lp, Cl * lp],
                              [Cl * lp, Cl * lp, -Cl * lp, -Cl * lp],
                              [-Cd, Cd, -Cd, Cd]])
 
 # Initialization
-X = np.matrix('0; 0; 0', dtype = float)
-eulAng = np.matrix('0; 0; 0', dtype = float)
-Xdot = np.matrix('0; 0; 0', dtype = float) # zeros(3, 1);
-Q = np.matrix('1; 0; 0; 0', dtype = float)
+X = np.array([0, 0, 0]).reshape(3,1)
+eulAng = np.array([0, 0, 0]).reshape(3,1)
+Xdot = np.array([0, 0, 0]).reshape(3,1) # zeros(3, 1);
+Q = np.array([1, 0, 0, 0])
 omega = np.zeros([3, 1])
 state =np.vstack([X, eulAng, Xdot, omega])
 # hovering condition
-wHover = np.matrix('1; 1; 1; 1', dtype = float)* np.sqrt(m * g / 4. / Cl)
-u = np.matrix('0; 0; 0; 0', dtype = float)
+wHover = np.array([1, 1, 1, 1]).reshape(4,1) * np.sqrt(m * g / 4. / Cl)
+
+u = np.array([0, 0, 0, 0]).reshape(4,1)
 PWM_hover = wHover / 4.
 w = wHover
 PWM = PWM_hover
 
+
 # Initial Setpoint
-eulAngSP = np.matrix('0; -0.2; 0', dtype = float)
-rateSP = np.matrix('0; 0; 0', dtype = float)
+eulAngSP = np.array([0, -0.2, 0]).reshape(3,1)
+rateSP = np.array([0, 0, 0]).reshape(3,1)
 vzSP = 0.
 
 # Sim time and Sampling
@@ -214,14 +208,22 @@ PR_SAT = pi
 
 Kp_vz = 40.
 Kp_vzSAT = 12.
+
+roll_controller = PIDController(dt, Kp_roll, sat=PR_SAT)
+pitch_controller = PIDController(dt, Kp_pitch, sat = PR_SAT)
+alt_controller = PIDController(dt, Kp_vzSAT, sat = Kp_vzSAT)
+
+p_controller = PIDController(dt, Kp_p)
+q_controller = PIDController(dt, Kp_q)
+r_controller = PIDController(dt, Kp_r)
 #u2motor = LA.inv([[1, 1, 1, 1],
 #                [1, -1, -1, 1],
 #                [1, 1, -1, -1],
 #                [-1, 1, -1, 1]]) / 0.25
-u2motor = np.matrix( ' 1  1  1 -1;'
-                     ' 1  -1 1  1;'
-                     ' 1 -1 -1 -1;'
-                     ' 1  1  -1  1', dtype=float)
+u2motor = np.array( [[1.,  1.,  1., -1.],
+                     [1.,  -1., 1.,  1.],
+                     [1., -1., -1., -1.],
+                     [1.,  1.,  -1.,  1.]])
 
 log = np.zeros([30,n])
 
@@ -232,12 +234,10 @@ for t in time:
     # no small angle assumptions, nonlinear model
     # TODO, include motor inertias effects
     if(t > 3):
-        eulAngSP = np.matrix('-0.1; 0.1; 0', dtype=float)
+        eulAngSP = np.array([-0.1, 0.1, 0]).reshape(3,1)
     eulAng = state[3:6]
     vel = state[6:9]
     omega = state[9:12]
-
-
 
     # Observer
     C = np.diag([0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1.])
@@ -262,19 +262,14 @@ for t in time:
 
     # PID
 
-
-    #rateSP[0] = pid_con(eulAngSP[0],eulAng[0], Kp_roll,PR_SAT,0.) # pid_con(axis_error[2], 0., Kp_roll, PR_SAT, 0.)
-    #rateSP[1] = pid_con(eulAngSP[1],eulAng[1], Kp_pitch,PR_SAT,0.) #pid_con(axis_error[1], 0., Kp_pitch, PR_SAT, 0.)
-    #rateSP[2] = 0.
-
-    rateSP[0] = pid_con(axis_error[2], 0., Kp_roll, PR_SAT, 0.)
-    rateSP[1] = pid_con(axis_error[1], 0., Kp_pitch, PR_SAT, 0.)
+    rateSP[0] = roll_controller.update(axis_error[2], 0.)
+    rateSP[1] = pitch_controller.update(axis_error[1], 0.)
     rateSP[2] = 0.
 
-    u[0] = thrust_tilt(eulAng, PWM_hover[0]) -pid_con(vzSP, vz, Kp_vz, Kp_vzSAT, 0.)
-    u[1] = pid_con(rateSP[0], p, Kp_p, W_SAT, 0.)
-    u[2] = pid_con(rateSP[1], q, Kp_q, W_SAT, 0.)
-    u[3] = pid_con(rateSP[2], r, Kp_r, 0., 0.)
+    u[0] = thrust_tilt(eulAng, PWM_hover[0]) -alt_controller.update(vzSP, vz)
+    u[1] = p_controller.update(rateSP[0], p)
+    u[2] = q_controller.update(rateSP[1], q)
+    u[3] = r_controller.update(rateSP[2], r)
     # ** *TEST VAR ** * %
     # testvar = axis_error; % pid_con(vzSP, vz, Kp_vz, 20);
 
@@ -313,7 +308,7 @@ for t in time:
     eulAng_dot = np.dot(trans, omega)
     fb_temp = np.reshape(F_b[:, i], (3, 1))
 
-    velDot = np.matrix([[0.], [0.], [g]]) + np.dot(rot_matrix3d(eulAng),np.matrix([[0.], [0.], [-f_trq[0]]]) ) / m - Fd * vel +  fb_temp/ m
+    velDot = np.array([[0.], [0.], [g]]) + np.dot(rot_matrix3d(eulAng),np.array([[0.], [0.], [-f_trq[0]]]) ) / m - Fd * vel +  fb_temp/ m
     Iomega = np.dot(I, omega)
     invI =  LA.inv(I) #<<< ---
 
@@ -410,13 +405,13 @@ if (PLOT == True):
 
 if (PLOT_TRAJ == True):
     ## 3d path
-    wing1o = np.matrix('0; 0; 0', dtype = float)
+    wing1o = np.array([0, 0, 0])
     wing1edge =  np.array([[.5],[-.5],[0.]])
-    wing2o = np.matrix('0; 0; 0', dtype = float)
+    wing2o = np.array([0, 0, 0])
     wing2edge = np.array([[.5],[.5],[0.]])  #np.matrix('1; 1; 0', dtype = float)
-    wing3o = np.matrix('0; 0; 0', dtype = float)
+    wing3o = np.array([0, 0, 0])
     wing3edge = np.array([[-.5],[.5],[0.]]) # np.matrix('-1; 1; 0', dtype = float)
-    wing4o = np.matrix('0; 0; 0', dtype = float)
+    wing4o = np.array([0, 0, 0])
     wing4edge = np.array([[-.5],[-.5],[0.]]) # np.matrix('-1; -1; 0', dtype = float)
 
     def update_traj(num, dat, lines):
