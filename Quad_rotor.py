@@ -19,13 +19,13 @@ from numpy import linalg as LA
 from numpy import sin as sin
 from numpy import cos as cos
 from numpy import tan as tan
-from navpy import angle2quat
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib.animation as animation
-from PIDController import PIDController
+from Controller import PIDController, quar_axis_error
 from transforms3d import euler
 
+euler = euler.EulerFuncs('rzyx')
 pi = np.pi
 PLOT = True
 PLOT_TRAJ = True
@@ -38,86 +38,23 @@ def normalize( vector ):
         normalizedVector = vector/LA.norm(vector)
     return normalizedVector
 
-def pid_con(sp, fb, Kp, sat, Kd):
-    #TODO: optional argumanets and add PI
-    # PID
-    dt = 1. / 1000.
-    err = sp - fb
-    pgain = Kp * (err)
-
-    output = pgain
-
-    dgain = Kd * (err / dt)
-    output = output + dgain
-
-
-    if (sat > 0.):
-        # set Saturation
-        output = min(output, sat)
-        output = max(output, -sat)
-    return output
-
-def quar_axis_error(eulAngSP, eulAng):
-    # Compute the error in quaternions from the setpoints and robot state in the body frame aligned with x, y, z axis
-
-    # Euler to quart
-    #print(eulAngSP)
-    setpoints_q0, setpoint_qvec = angle2quat(eulAngSP[0,0], eulAngSP[1,0], eulAngSP[2,0]) # ZYX default rotation
-    state_q0, state_qvec = angle2quat(eulAng[0,0], eulAng[1,0], eulAng[2,0])
-
-    a1 = setpoints_q0
-    b1 = setpoint_qvec[0]
-    c1 = setpoint_qvec[1]
-    d1 = setpoint_qvec[2]
-    a2 = state_q0
-    b2 = state_qvec[0] # Conjugate minus
-    c2 = state_qvec[1] # conjugate minus
-    d2 = state_qvec[2] # Conjugate minus
-    state_quat_conjugate = np.matrix([a2, -b2, -c2, -d2])
-
-    # Quaternion multiplication q_set * (q_state)' State - target
-    quaternion_error_W = np.zeros([4,1])
-    quaternion_error_W[0] = a1 * (a2) - b1 * (-b2) - c1 * (-c2) - d1 * (-d2)
-    quaternion_error_W[1] = a1 * (-b2) + b1 * a2 + c1 * (-d2) - d1 * (-c2)
-    quaternion_error_W[2] = a1 * (-c2) - b1 * (-d2) + c1 * a2 + d1 * (-b2)
-    quaternion_error_W[3] = a1 * (-d2) + b1 * (-c2) - c1 * (-b2) + d1 * a2
-
-    # Translate the error into the body frame
-    if (quaternion_error_W[0] < 0):
-        quaternion_error_W[1: 4] = -1. * quaternion_error_W[1: 4]
-    state_q = np.hstack((state_q0, state_qvec))
-    Rmatrixq = quat2rotm(state_q)
-    axis_error = np.dot( np.transpose(Rmatrixq),(quaternion_error_W[1:4]) )
-
-    return axis_error
-
-def T(eulAng ):
-#  Transformes omega in body frame to NED body centered frame
-    phi = eulAng[0,0]
-    theta = eulAng[1,0]
-    psi =  eulAng[2,0]
-
-    t = np.matrix([[1., sin(phi)* tan(theta), cos(phi)*tan(theta)],
-         [0., cos(phi), -sin(phi)],
-         [0., sin(phi)/cos(theta), cos(phi)/cos(theta)]])
-    return t
-
 def quat2rotm(q):
     s = 1.
-    rmatrix =np.matrix([[1.-2.*s*(q[2]*q[2]+q[3]*q[3]), 2.*s*(q[1]*q[2]-q[3]*q[0]), 2.*s*(q[1]*q[3]+q[2]*q[0])],
+    rmatrix =np.array([[1.-2.*s*(q[2]*q[2]+q[3]*q[3]), 2.*s*(q[1]*q[2]-q[3]*q[0]), 2.*s*(q[1]*q[3]+q[2]*q[0])],
                         [2.*s*(q[1]*q[2]+q[3]*q[0]), 1.-2.*s*(q[1]*q[1]+q[3]*q[3]), 2.*s*(q[2]*q[3]-q[1]*q[0])],
                         [2.*s*(q[1]*q[3]-q[2]*q[0]), 2.*s*(q[2]*q[3]+q[1]*q[0]), 1.-2.*s*(q[1]*q[1]+q[2]*q[2])]])
     return rmatrix
 
 def  rot_matrix3d(eulAng):
-    #  Eular angle transformation using Z Y X convention
+    # Eular angle transformation using Z Y X convention
+    # rotates vector in a frame 
     phi = eulAng[0,0]
     theta = eulAng[1,0]
     psi =  eulAng[2,0]
 
-    Rx = np.matrix([ [1., 0., 0.], [0., cos(phi), -sin(phi)], [0.,  sin(phi), cos(phi)]]) #Roll
-    Ry = np.matrix([ [cos(theta), 0., sin(theta)], [0., 1., 0.], [-sin(theta), 0. , cos(theta)]]) #Pitch
-    Rz = np.matrix([ [cos(psi), -sin(psi), 0.], [sin(psi), cos(psi), 0.], [0., 0., 1.] ]) #Yaw
+    Rx = np.array([ [1., 0., 0.], [0., cos(phi), -sin(phi)], [0.,  sin(phi), cos(phi)]]) #Roll
+    Ry = np.array([ [cos(theta), 0., sin(theta)], [0., 1., 0.], [-sin(theta), 0. , cos(theta)]]) #Pitch
+    Rz = np.array([ [cos(psi), -sin(psi), 0.], [sin(psi), cos(psi), 0.], [0., 0., 1.] ]) #Yaw
 
     return LA.multi_dot([Rz,Ry,Rx])
 
@@ -137,6 +74,28 @@ def theta_wraper(theta):
     elif(theta < -(pi)):
         theta = theta + 2 * pi
     return theta
+
+def init_log (log):
+    log['X'] = []
+    log['eulAng'] = []
+    log['vel'] = []
+    log['angvel'] = []
+    log['u'] = []
+    log['PWM'] = []
+    log['velDot'] = []
+    log['eulAngSP'] = []
+    log['rateSP'] = []
+
+def update_log(state, t, u, PWM,velDot, eulAngSP, rateSP):
+    log['X'].append(0)
+    log['eulAng'].append(0)
+    log['vel'].append(0)
+    log['angvel'].append(0)
+    log['u'].append(0)
+    log['PWM'].append(0)
+    log['velDot'].append(0)
+    log['eulAngSP'].append(0)
+    log['rateSP'].append(0)
 
 # Quad physical parameters
 armLength = 95.E-3 # mm
@@ -164,11 +123,11 @@ prop2f_trqMatrix = np.array([[Cl, Cl, Cl, Cl],
                              [-Cd, Cd, -Cd, Cd]])
 
 # Initialization
-X = np.array([0, 0, 0]).reshape(3,1)
-eulAng = np.array([0, 0, 0]).reshape(3,1)
-Xdot = np.array([0, 0, 0]).reshape(3,1) # zeros(3, 1);
-Q = np.array([1, 0, 0, 0])
-omega = np.zeros([3, 1])
+X = np.array([0., 0., 0.]).reshape(3,1)
+eulAng = np.array([0., 0., 0.]).reshape(3,1)
+Xdot = np.array([0., 0., 0.]).reshape(3,1) # zeros(3, 1);
+Q = np.array([1., 0., 0., 0.])
+omega = np.array([0., 0., 0.]).reshape(3,1)
 state =np.vstack([X, eulAng, Xdot, omega])
 # hovering condition
 wHover = np.array([1, 1, 1, 1]).reshape(4,1) * np.sqrt(m * g / 4. / Cl)
@@ -180,8 +139,8 @@ PWM = PWM_hover
 
 
 # Initial Setpoint
-eulAngSP = np.array([0, -0.2, 0]).reshape(3,1)
-rateSP = np.array([0, 0, 0]).reshape(3,1)
+eulAngSP = np.array([0., -0.2, 0.]).reshape(3,1)
+rateSP = np.array([0., 0., 0.]).reshape(3,1)
 vzSP = 0.
 
 # Sim time and Sampling
@@ -204,41 +163,41 @@ W_SAT = 35.
 
 Kp_roll = 15.
 Kp_pitch = 15.
+Kp_yaw = 5.
 PR_SAT = pi
 
 Kp_vz = 40.
 Kp_vzSAT = 12.
 
-roll_controller = PIDController(dt, Kp_roll, sat=PR_SAT)
-pitch_controller = PIDController(dt, Kp_pitch, sat = PR_SAT)
-alt_controller = PIDController(dt, Kp_vzSAT, sat = Kp_vzSAT)
+roll_controller = PIDController(dt, Kp_roll, sat=PR_SAT, name='Roll')
+pitch_controller = PIDController(dt, Kp_pitch, sat = PR_SAT, name='Pitch')
+yaw_controller = PIDController(dt, Kp_yaw, name='Roll')
 
-p_controller = PIDController(dt, Kp_p)
-q_controller = PIDController(dt, Kp_q)
-r_controller = PIDController(dt, Kp_r)
-#u2motor = LA.inv([[1, 1, 1, 1],
-#                [1, -1, -1, 1],
-#                [1, 1, -1, -1],
-#                [-1, 1, -1, 1]]) / 0.25
+alt_controller = PIDController(dt, Kp_vzSAT, sat = Kp_vzSAT, name='Alt')
+
+p_controller = PIDController(dt, Kp_p, name='p')
+q_controller = PIDController(dt, Kp_q, name='q')
+r_controller = PIDController(dt, Kp_r, name='r')
+
 u2motor = np.array( [[1.,  1.,  1., -1.],
                      [1.,  -1., 1.,  1.],
                      [1., -1., -1., -1.],
                      [1.,  1.,  -1.,  1.]])
 
 log = np.zeros([30,n])
+q_state = euler.euler2quat(eulAng[0,0], eulAng[1,0], eulAng[2,0])
 
 for t in time:
 #for t in range(0,2000):
 # loop
 
-    # no small angle assumptions, nonlinear model
-    # TODO, include motor inertias effects
     if(t > 3):
         eulAngSP = np.array([-0.1, 0.1, 0]).reshape(3,1)
-    eulAng = state[3:6]
-    vel = state[6:9]
-    omega = state[9:12]
 
+
+    eulAng = np.array(state[3:6])
+    vel = np.array(state[6:9])
+    omega = np.array(state[9:12])
     # Observer
     C = np.diag([0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1.])
 
@@ -258,30 +217,30 @@ for t in time:
     ## controller
 
     # Calculating quartenion error
-    axis_error = quar_axis_error(eulAngSP,eulAng)
 
+    q_sp = euler.euler2quat(eulAngSP[0,0], eulAngSP[1,0], eulAngSP[2,0]) # ZYX default rotation
+    q_state = euler.euler2quat(eulAng[0,0], eulAng[1,0], eulAng[2,0]) # ZYX default rotation
+
+    axis_error = quar_axis_error(q_sp,q_state)
     # PID
 
-    rateSP[0] = roll_controller.update(axis_error[2], 0.)
-    rateSP[1] = pitch_controller.update(axis_error[1], 0.)
-    rateSP[2] = 0.
+    rateSP[0,0] = roll_controller.update(axis_error[2], 0.)
+    rateSP[1,0] = pitch_controller.update(axis_error[1], 0.)
+    rateSP[2,0] = 0.
 
     u[0] = thrust_tilt(eulAng, PWM_hover[0]) -alt_controller.update(vzSP, vz)
-    u[1] = p_controller.update(rateSP[0], p)
-    u[2] = q_controller.update(rateSP[1], q)
-    u[3] = r_controller.update(rateSP[2], r)
+    u[1] = p_controller.update(rateSP[0,0], p)
+    u[2] = q_controller.update(rateSP[1,0], q)
+    u[3] = r_controller.update(rateSP[2,0], r)
     # ** *TEST VAR ** * %
     # testvar = axis_error; % pid_con(vzSP, vz, Kp_vz, 20);
 
     PWM = np.dot(u2motor,u)
-
-
-# ESC Saturation
+    # ESC Saturation
 
     for val in range(0, 4):
         PWM[val] = min(PWM[val], 100)
         PWM[val] = max(PWM[val], 10)
-    #print(PWM)
 
     # Motor dynamics
     wCmd = PWM * 4 # mapping ESC to rps experimentally
@@ -292,23 +251,25 @@ for t in time:
     f_trq = np.dot(prop2f_trqMatrix , np.power(w,2))
 
     # Euler Newton equations - quad.dynamics
-
     # Quart formulation
     # Rotation  matrix for transforming body coord to ground coord
-    # RmatrixQ = quat2rotm(roro.Q');
+    dcm_body2frame = quat2rotm( q_state )
     #
-    # s = Q(1);
-    # v = [Q(1); Q(2);Q(3)];
-    # sdot = -0.5 * (dot(omega, v));
-    # vdot = 0.5 * (s * omega + cross(omega, v));
-    # Qdot = [sdot; vdot]
+
+    s = q_state[0]
+    v = np.array([q_state[1], q_state[2], q_state[3]])
+
+    sdot = -0.5 * (np.dot(v, omega))
+    #print(sdot)
+    vdot = 0.5 * (s * omega.reshape(3) + np.cross(omega.reshape(3), v))
+    Qdot = np.append(sdot, vdot)
     #
-    trans = T(eulAng)
+    #trans = T(eulAng)
     Xdot = vel
-    eulAng_dot = np.dot(trans, omega)
+    eulAng_dot = np.dot(dcm_body2frame, omega)
     fb_temp = np.reshape(F_b[:, i], (3, 1))
 
-    velDot = np.array([[0.], [0.], [g]]) + np.dot(rot_matrix3d(eulAng),np.array([[0.], [0.], [-f_trq[0]]]) ) / m - Fd * vel +  fb_temp/ m
+    velDot = np.array([[0.], [0.], [g]]) + np.dot(dcm_body2frame,np.array([[0.], [0.], -f_trq[0]]) ) / m - Fd * vel +  fb_temp/ m
     Iomega = np.dot(I, omega)
     invI =  LA.inv(I) #<<< ---
 
@@ -320,9 +281,10 @@ for t in time:
 
     stateDot =np.vstack([Xdot, eulAng_dot, velDot, omegaDot])
 
-
     # Update
     state = state + stateDot * dt
+    q_state = q_state + Qdot * dt
+    #q_next = q_state + Qdot * dt
 
     # Accel Sensor
     accel = velDot
@@ -334,6 +296,7 @@ for t in time:
 
 
 # Extracting Sim data
+
 X = log[0:3,:]
 eulAng = log[3:6,:]
 vel = log[6:9,:]
@@ -352,7 +315,6 @@ if (PLOT == True):
     plt.plot(time, X[2,:],'b',label='Z',linewidth= 0.5)
     plt.legend()
     plt.title('Pos')
-
 
     plt.figure(2)
     plt.plot(time, vel[0,:],'r',label='X',linewidth= 0.5)
@@ -374,7 +336,6 @@ if (PLOT == True):
     plt.xlabel("Time(s)")
     plt.legend(loc='upper right')
     plt.title('Euler Angles')
-
 
     plt.figure(4)
     plt.plot(time, u[0,:],label='Z',linewidth= 0.5)
