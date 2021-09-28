@@ -21,37 +21,44 @@ from numpy import tan as tan
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib.animation as animation
-from Controller import PIDController, quar_axis_error, thrust_tilt
+from Controller import PIDController, quar_axis_error, thrust_tilt, FlightComputer
 from Helper import Logger, normalize, rot_matrix3d, quat2rotm
 from transforms3d import euler
+from copy import deepcopy
+
+import json
 
 euler = euler.EulerFuncs('rxyz')
+# Constants
 pi = np.pi
+g = 9.81 # m/s
+rho = 1.1839  # kg/m/m/m ar 25 C
+
 PLOT = True
 PLOT_TRAJ = True
 #log_variables = ['x_NED', 'e_xyz', 'angle_error', 'x_dot_NED', 'omega', ' u', 'PWM', 'x_ddot_NED', 'e_xyz_sp_NED', 'rate_sp']
 log_variables = ['X', 'eulAng', 'Xdot', 'omega', 't', 'u', 'PWM','velDot', 'eulAngSP', 'rateSP']
 
 logger = Logger(log_variables)
+
+with open('config.json') as f:
+  config = json.load(f)
+
+drone_params = config['drone_params']
+fc_config =  config['fc_config']
 # Quad physical parameters
-armLength = 95.E-3 # mm
+armLength = drone_params['armLength'] # m
 lp = armLength * sin(pi / 4.)
+m = drone_params['mass']
+I = np.array(drone_params['Inertia'])
+Fd = drone_params['Fd'] # drag force coeff of drone assuming it moves at 2 m / s  at 0 and angle of 0.1 %
 
-g = 9.81
-tau = 35.E-3
-m = 1.157
-
-Ixx = 0.014
-Iyy = 0.014
-Izz = 2. * 0.014
-I = np.array([[Ixx, 0, 0],
-              [0, Iyy, 0],
-              [0, 0, Izz]])
-
-Cl = 7.4e-05 # Thrust to RPS ^ 2
-
-Cd = 6.5e-07
-Fd = 0.5694 # drag force coeff of drone assuming it moves at 2 m / s  at 0 and angle of 0.1 %
+# Propulsion Parameters
+prop_config = drone_params['propulsion']
+tau = prop_config['tau']
+Cl = prop_config['Cl'] # Thrust to RPS ^ 2
+Cd = prop_config['Cd']
+pwm2rpm  = prop_config['pwm2rpm']# mapping ESC to rps experimentally
 
 prop2f_trqMatrix = np.array([[Cl, Cl, Cl, Cl],
                              [Cl * lp, -Cl * lp, -Cl * lp, Cl * lp],
@@ -62,20 +69,13 @@ prop2f_trqMatrix = np.array([[Cl, Cl, Cl, Cl],
 X = np.array([0., 0., 0.]).reshape(3,1)
 eulAng = np.array([0., 0., 0.]).reshape(3,1)
 Xdot = np.array([0., 0., 0.]).reshape(3,1) # zeros(3, 1);
-Q = np.array([1., 0., 0., 0.])
 omega = np.array([0., 0., 0.]).reshape(3,1)
 state =np.vstack([X, eulAng, Xdot, omega])
-# hovering condition
-wHover = np.array([1, 1, 1, 1]).reshape(4,1) * np.sqrt(m * g / 4. / Cl)
 
-u = np.array([0, 0, 0, 0]).reshape(4,1)
-PWM_hover = wHover / 4.
-w = wHover
-PWM = PWM_hover
 
 
 # Initial Setpoint
-eulAngSP = np.array([0., -0.2, 0.]).reshape(3,1)
+eulAngSP = np.array([0., -0.2, 0.])
 rateSP = np.array([0., 0., 0.]).reshape(3,1)
 vzSP = 0.
 
@@ -91,41 +91,21 @@ n = len(time)
 i = 0
 F_b = np.zeros([3,1])
 Trq_b = np.zeros([3,1])
-# Controller settings
-Kp_p = 19.
-Kp_q = 19.
-Kp_r = 19.
-W_SAT = 35.
 
-Kp_roll = 15.
-Kp_pitch = 15.
-Kp_yaw = 15.
-PR_SAT = pi
+# Temp calculated here, should done in fc config
+# hovering condition
+wHover = np.array([1, 1, 1, 1]).reshape(4,1) * np.sqrt(m * g / 4. / Cl)
+PWM_hover = wHover / 4.
+w = wHover
 
-Kp_vz = 40.
-Kp_vzSAT = 12.
-
-roll_controller = PIDController(dt, Kp_roll, sat=PR_SAT, name='Roll')
-pitch_controller = PIDController(dt, Kp_pitch, sat = PR_SAT, name='Pitch')
-yaw_controller = PIDController(dt, Kp_yaw, name='Roll')
-
-alt_controller = PIDController(dt, Kp_vzSAT, sat = Kp_vzSAT, name='Alt')
-
-p_controller = PIDController(dt, Kp_p, name='p')
-q_controller = PIDController(dt, Kp_q, name='q')
-r_controller = PIDController(dt, Kp_r, name='r')
-
-u2motor = np.array( [[1.,  1.,  1., -1.],
-                     [1.,  -1., 1.,  1.],
-                     [1., -1., -1., -1.],
-                     [1.,  1.,  -1.,  1.]])
+fc = FlightComputer(dt, fc_config)
+fc.PWM_hover = PWM_hover
 
 q_state = euler.euler2quat(eulAng[0,0], eulAng[1,0], eulAng[2,0])
 for t in time:
 
-
     if(t > 3):
-        eulAngSP = np.array([-0.1, 0.1, 0]).reshape(3,1)
+        eulAngSP = np.array([-0.1, 0.1, 0])
 
     X = np.array(state[0:3])
     eulAng = np.array(state[3:6])
@@ -144,33 +124,22 @@ for t in time:
     q = state[10] # y(11)
     r = state[11] # y(12)
 
+    sensor_data = dict(
+        vz = vz,
+        q_state = q_state,
+        p = p,
+        q = q,
+        r = r,
+        eulAng = eulAng
+    )
     ## controller
+    PWM, log = fc.update(sensor_data, eulAngSP)
 
-    # Calculating quartenion error
-    q_sp = euler.euler2quat(eulAngSP[0,0], eulAngSP[1,0], eulAngSP[2,0]) # XYZ
-    axis_error = quar_axis_error(q_sp,q_state)
-    # Cascade PID
-
-    rateSP[0,0] = roll_controller.update(axis_error[0], 0.)
-    rateSP[1,0] = pitch_controller.update(axis_error[1], 0.)
-    rateSP[2,0] = yaw_controller.update(axis_error[2], 0.)
-
-    u[0] = thrust_tilt(eulAng, PWM_hover[0]) -alt_controller.update(vzSP, vz)
-    u[1] = p_controller.update(rateSP[0,0], p)
-    u[2] = q_controller.update(rateSP[1,0], q)
-    u[3] = r_controller.update(rateSP[2,0], r)
-    # ** *TEST VAR ** * %
-    # testvar = axis_error; % pid_con(vzSP, vz, Kp_vz, 20);
-    ## ESC ##
-    PWM = np.dot(u2motor,u)
-    # ESC Saturation
-
-    for val in range(0, 4):
-        PWM[val] = min(PWM[val], 100)
-        PWM[val] = max(PWM[val], 10)
+    eulAng, eulAngSP, u, PWM, rateSP = log
 
     ## Motor dynamics ##
-    wCmd = PWM * 4 # mapping ESC to rps experimentally
+    PWM = PWM.reshape(4,1)
+    wCmd = PWM * pwm2rpm 
     # w = wCmd;
     dw = (wCmd - w) / tau
     w = w + dw * dt
@@ -180,7 +149,7 @@ for t in time:
     ## Euler Newton equations - quad.dynamics ##
     # Quart formulation
     # dcm transforming body coord to ground coord
-    dcm_body2frame =  quat2rotm( q_state )
+    dcm_body2frame = quat2rotm( q_state )
 
     s = q_state[0]
     v = np.array([q_state[1], q_state[2], q_state[3]])
@@ -194,7 +163,7 @@ for t in time:
     fb_temp = F_b#  np.reshape(F_b[:, i], (3, 1))
     velDot = np.array([[0.], [0.], [g]]) + np.dot(dcm_body2frame,np.array([[0.], [0.], -f_trq[0]]) ) / m - Fd * vel +  fb_temp/ m
     Iomega = np.dot(I, omega)
-    invI =  LA.inv(I) # <<< ---
+    invI =  LA.inv(I)
 
     x_product = np.transpose(np.cross(np.transpose(omega), np.transpose(Iomega)))
     trqb_temp =Trq_b # np.reshape(Trq_b[:, i],(3,1))
@@ -210,7 +179,7 @@ for t in time:
     # Accel Sensor
     accel = velDot
     ## Logging sim data
-    var_list = [X , eulAng, vel, omega, t, u, PWM, velDot, eulAngSP, rateSP]
+    var_list = deepcopy([X , eulAng, vel, omega, t, u, PWM, velDot, eulAngSP, rateSP])
     logger.update_log(var_list)
 
 # Extracting Sim data
@@ -314,7 +283,6 @@ if (PLOT_TRAJ == True):
     data = X
 
     data = np.array(data)
-
 
     n_steps = (tend* f)
     plot_frames = (int)(n_steps/50)

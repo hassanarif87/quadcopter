@@ -1,0 +1,44 @@
+{
+    "drone_params": {
+        "mass" : 1.157,
+        "Inertia" :[
+            [0.014,0,0],
+            [0,0.014,0],
+            [0,0,0.028]
+        ],
+        "armLength": 95e-3,
+        "S": 0.0019,
+        "C_fb" : 1,
+        "C_trq_b" : 0,
+        "Fd" : 0.569,
+        "propulsion": {
+            "Cl":7.4e-5,
+            "Cd":6.5e-7,
+            "tau": 35e-3,
+            "pwm2rpm": 4
+        }
+    },
+    "fc_config":{
+        "gains":{
+            "Kp_p": 19.0,
+            "Kp_q": 19.0,
+            "Kp_r": 19.0,
+            "W_SAT": 35.0,
+            "Kp_roll": 15.0,
+            "Kp_pitch": 15.0,
+            "Kp_yaw": 15.0,
+            "PR_SAT": 3.14,
+            "Kp_vz": 40.0,
+            "Kp_vzSAT": 12.0
+        },
+        "esc_settings":{
+            "Saturation": [20, 100]
+        },
+        "cmd2motor_map":[
+            [1,  1,  1, -1],
+            [1,  -1, 1,  1],
+            [1, -1, -1, -1],
+            [1,  1,  -1,  1]
+        ]
+    }
+}

@@ -48,11 +48,9 @@ class Logger:
         self.log_name_lst = log_name_lst
         self.log = dict()
         self._init_log()
-
     def _init_log (self):
         for var in self.log_name_lst:
             self.log[var]= []
-
     def update_log(self,var_lst):
         if len(var_lst) is not len(self.log_name_lst):
             raise IndexError ('Logged variables not the same as defined list: ', self.log_variables)
