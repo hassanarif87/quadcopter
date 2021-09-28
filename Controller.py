@@ -1,3 +1,4 @@
+import numpy as np
 from transforms3d import quaternions
 
 class PIDController:
@@ -52,6 +53,6 @@ def thrust_tilt(eulAng,PWM_hover):
     phi = eulAng[0,0] # Roll
     theta = eulAng[1,0] # Pitch
     psi =  eulAng[2,0]
-    scaling = 1./(abs(np.sqrt(cos(phi)*cos(theta))))
+    scaling = 1./(abs(np.sqrt(np.cos(phi)*np.cos(theta))))
     scaling = min (scaling, 1.3)
     return PWM_hover*scaling

@@ -25,7 +25,7 @@ import matplotlib.animation as animation
 from Controller import PIDController, quar_axis_error, thrust_tilt
 from transforms3d import euler
 
-euler = euler.EulerFuncs('rzyx')
+euler = euler.EulerFuncs('rxyz')
 pi = np.pi
 PLOT = True
 PLOT_TRAJ = True
@@ -46,7 +46,7 @@ def quat2rotm(q):
     return rmatrix
 
 def  rot_matrix3d(eulAng):
-    # Eular angle transformation using Z Y X convention
+    # Eular angle transformation using X Y Z convention
     # rotates vector in a frame
     phi = eulAng[0,0]
     theta = eulAng[1,0]
@@ -155,7 +155,7 @@ W_SAT = 35.
 
 Kp_roll = 15.
 Kp_pitch = 15.
-Kp_yaw = 5.
+Kp_yaw = 15.
 PR_SAT = pi
 
 Kp_vz = 40.
@@ -207,15 +207,15 @@ for t in time:
 
     # Calculating quartenion error
 
-    q_sp = euler.euler2quat(eulAngSP[0,0], eulAngSP[1,0], eulAngSP[2,0]) # ZYX default rotation
+    q_sp = euler.euler2quat(eulAngSP[0,0], eulAngSP[1,0], eulAngSP[2,0]) # XYZ 
     #q_state = euler.euler2quat(eulAng[0,0], eulAng[1,0], eulAng[2,0]) # ZYX default rotation
 
     axis_error = quar_axis_error(q_sp,q_state)
     # PID
 
-    rateSP[0,0] = roll_controller.update(axis_error[2], 0.)
+    rateSP[0,0] = roll_controller.update(axis_error[0], 0.)
     rateSP[1,0] = pitch_controller.update(axis_error[1], 0.)
-    rateSP[2,0] = 0.
+    rateSP[2,0] = yaw_controller.update(axis_error[2], 0.)
 
     u[0] = thrust_tilt(eulAng, PWM_hover[0]) -alt_controller.update(vzSP, vz)
     u[1] = p_controller.update(rateSP[0,0], p)
@@ -242,7 +242,7 @@ for t in time:
     # Euler Newton equations - quad.dynamics
     # Quart formulation
     # Rotation  matrix for transforming body coord to ground coord
-    dcm_body2frame = rot_matrix3d(eulAng) # quat2rotm( q_state )
+    dcm_body2frame =  quat2rotm( q_state ) #rot_matrix3d(eulAng)
     #
 
     s = q_state[0]
