@@ -22,7 +22,7 @@ from numpy import tan as tan
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib.animation as animation
-from Controller import PIDController, quar_axis_error
+from Controller import PIDController, quar_axis_error, thrust_tilt
 from transforms3d import euler
 
 euler = euler.EulerFuncs('rzyx')
@@ -47,7 +47,7 @@ def quat2rotm(q):
 
 def  rot_matrix3d(eulAng):
     # Eular angle transformation using Z Y X convention
-    # rotates vector in a frame 
+    # rotates vector in a frame
     phi = eulAng[0,0]
     theta = eulAng[1,0]
     psi =  eulAng[2,0]
@@ -58,14 +58,6 @@ def  rot_matrix3d(eulAng):
 
     return LA.multi_dot([Rz,Ry,Rx])
 
-def thrust_tilt(eulAng,PWM_hover):
-
-    phi = eulAng[0,0] # Roll
-    theta = eulAng[1,0] # Pitch
-    psi =  eulAng[2,0]
-    scaling = 1./(abs(np.sqrt(cos(phi)*cos(theta))))
-    scaling = min (scaling, 1.3)
-    return PWM_hover*scaling
 
 def theta_wraper(theta):
     # keeps theta + / - pi
@@ -186,10 +178,8 @@ u2motor = np.array( [[1.,  1.,  1., -1.],
 
 log = np.zeros([30,n])
 q_state = euler.euler2quat(eulAng[0,0], eulAng[1,0], eulAng[2,0])
-
 for t in time:
-#for t in range(0,2000):
-# loop
+
 
     if(t > 3):
         eulAngSP = np.array([-0.1, 0.1, 0]).reshape(3,1)
@@ -213,13 +203,12 @@ for t in time:
     r = state[11] # y(12)
 
     # Euler angles
-    # eulAng = np.zeros([3, 1])
     ## controller
 
     # Calculating quartenion error
 
     q_sp = euler.euler2quat(eulAngSP[0,0], eulAngSP[1,0], eulAngSP[2,0]) # ZYX default rotation
-    q_state = euler.euler2quat(eulAng[0,0], eulAng[1,0], eulAng[2,0]) # ZYX default rotation
+    #q_state = euler.euler2quat(eulAng[0,0], eulAng[1,0], eulAng[2,0]) # ZYX default rotation
 
     axis_error = quar_axis_error(q_sp,q_state)
     # PID
@@ -253,7 +242,7 @@ for t in time:
     # Euler Newton equations - quad.dynamics
     # Quart formulation
     # Rotation  matrix for transforming body coord to ground coord
-    dcm_body2frame = quat2rotm( q_state )
+    dcm_body2frame = rot_matrix3d(eulAng) # quat2rotm( q_state )
     #
 
     s = q_state[0]
@@ -264,7 +253,6 @@ for t in time:
     vdot = 0.5 * (s * omega.reshape(3) + np.cross(omega.reshape(3), v))
     Qdot = np.append(sdot, vdot)
     #
-    #trans = T(eulAng)
     Xdot = vel
     eulAng_dot = np.dot(dcm_body2frame, omega)
     fb_temp = np.reshape(F_b[:, i], (3, 1))
@@ -283,8 +271,11 @@ for t in time:
 
     # Update
     state = state + stateDot * dt
-    q_state = q_state + Qdot * dt
+    q_next = normalize(q_state + Qdot * dt)
+    q_state = q_next
     #q_next = q_state + Qdot * dt
+    if  sum(q_state - normalize(q_next)) > 0.0001:
+        print("q delta", sum(q_state - normalize(q_next)))
 
     # Accel Sensor
     accel = velDot

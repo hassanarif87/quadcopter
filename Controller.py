@@ -36,7 +36,6 @@ def quar_axis_error(q_sp, q_state):
     # Compute the error in quaternions from the setpoints and robot state in the body frame aligned with x, y, z axis
 
     #state_quat_conjugate = np.array([a2, -b2, -c2, -d2])
-
     # Quaternion multiplication q_set * (q_state)' target - state
     q_state_conj = quaternions.qconjugate(q_state)
     q_error =  quaternions.qmult(q_sp,q_state_conj)
@@ -47,3 +46,12 @@ def quar_axis_error(q_sp, q_state):
 
     axis_error = quaternions.quat2axangle(q_error)
     return axis_error[0] * axis_error[1]
+
+def thrust_tilt(eulAng,PWM_hover):
+
+    phi = eulAng[0,0] # Roll
+    theta = eulAng[1,0] # Pitch
+    psi =  eulAng[2,0]
+    scaling = 1./(abs(np.sqrt(cos(phi)*cos(theta))))
+    scaling = min (scaling, 1.3)
+    return PWM_hover*scaling
