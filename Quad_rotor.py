@@ -14,7 +14,6 @@
 # |
 # *----y
 import numpy as np
-#import quaternion
 from numpy import linalg as LA
 from numpy import sin as sin
 from numpy import cos as cos
@@ -23,72 +22,17 @@ import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
 import matplotlib.animation as animation
 from Controller import PIDController, quar_axis_error, thrust_tilt
+from Helper import Logger, normalize, rot_matrix3d, quat2rotm
 from transforms3d import euler
 
 euler = euler.EulerFuncs('rxyz')
 pi = np.pi
 PLOT = True
 PLOT_TRAJ = True
+#log_variables = ['x_NED', 'e_xyz', 'angle_error', 'x_dot_NED', 'omega', ' u', 'PWM', 'x_ddot_NED', 'e_xyz_sp_NED', 'rate_sp']
+log_variables = ['X', 'eulAng', 'Xdot', 'omega', 't', 'u', 'PWM','velDot', 'eulAngSP', 'rateSP']
 
-def normalize( vector ):
-    # normalise vector
-    if (LA.norm(vector) == 0 ):
-        normalizedVector = vector
-    else:
-        normalizedVector = vector/LA.norm(vector)
-    return normalizedVector
-
-def quat2rotm(q):
-    s = 1.
-    rmatrix =np.array([[1.-2.*s*(q[2]*q[2]+q[3]*q[3]), 2.*s*(q[1]*q[2]-q[3]*q[0]), 2.*s*(q[1]*q[3]+q[2]*q[0])],
-                        [2.*s*(q[1]*q[2]+q[3]*q[0]), 1.-2.*s*(q[1]*q[1]+q[3]*q[3]), 2.*s*(q[2]*q[3]-q[1]*q[0])],
-                        [2.*s*(q[1]*q[3]-q[2]*q[0]), 2.*s*(q[2]*q[3]+q[1]*q[0]), 1.-2.*s*(q[1]*q[1]+q[2]*q[2])]])
-    return rmatrix
-
-def  rot_matrix3d(eulAng):
-    # Eular angle transformation using X Y Z convention
-    # rotates vector in a frame
-    phi = eulAng[0,0]
-    theta = eulAng[1,0]
-    psi =  eulAng[2,0]
-
-    Rx = np.array([ [1., 0., 0.], [0., cos(phi), -sin(phi)], [0.,  sin(phi), cos(phi)]]) #Roll
-    Ry = np.array([ [cos(theta), 0., sin(theta)], [0., 1., 0.], [-sin(theta), 0. , cos(theta)]]) #Pitch
-    Rz = np.array([ [cos(psi), -sin(psi), 0.], [sin(psi), cos(psi), 0.], [0., 0., 1.] ]) #Yaw
-
-    return LA.multi_dot([Rz,Ry,Rx])
-
-
-def theta_wraper(theta):
-    # keeps theta + / - pi
-    if (theta >= (pi)):
-        theta = theta - 2 * pi
-    elif(theta < -(pi)):
-        theta = theta + 2 * pi
-    return theta
-
-def init_log (log):
-    log['X'] = []
-    log['eulAng'] = []
-    log['vel'] = []
-    log['angvel'] = []
-    log['u'] = []
-    log['PWM'] = []
-    log['velDot'] = []
-    log['eulAngSP'] = []
-    log['rateSP'] = []
-
-def update_log(state, t, u, PWM,velDot, eulAngSP, rateSP):
-    log['X'].append(0)
-    log['eulAng'].append(0)
-    log['vel'].append(0)
-    log['angvel'].append(0)
-    log['u'].append(0)
-    log['PWM'].append(0)
-    log['velDot'].append(0)
-    log['eulAngSP'].append(0)
-    log['rateSP'].append(0)
-
+logger = Logger(log_variables)
 # Quad physical parameters
 armLength = 95.E-3 # mm
 lp = armLength * sin(pi / 4.)
@@ -145,8 +89,8 @@ time = np.linspace(tstart,tend,(int)(tend*f))
 
 n = len(time)
 i = 0
-F_b = np.zeros([3,n])
-Trq_b = np.zeros([3,n])
+F_b = np.zeros([3,1])
+Trq_b = np.zeros([3,1])
 # Controller settings
 Kp_p = 19.
 Kp_q = 19.
@@ -176,7 +120,6 @@ u2motor = np.array( [[1.,  1.,  1., -1.],
                      [1., -1., -1., -1.],
                      [1.,  1.,  -1.,  1.]])
 
-log = np.zeros([30,n])
 q_state = euler.euler2quat(eulAng[0,0], eulAng[1,0], eulAng[2,0])
 for t in time:
 
@@ -184,7 +127,7 @@ for t in time:
     if(t > 3):
         eulAngSP = np.array([-0.1, 0.1, 0]).reshape(3,1)
 
-
+    X = np.array(state[0:3])
     eulAng = np.array(state[3:6])
     vel = np.array(state[6:9])
     omega = np.array(state[9:12])
@@ -192,7 +135,6 @@ for t in time:
     C = np.diag([0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1.])
 
     y = np.dot(C,state)
-
     # vertcal velocity from barometer and rate in bodyframe
     # Baro
     vz = state[8]
@@ -202,16 +144,12 @@ for t in time:
     q = state[10] # y(11)
     r = state[11] # y(12)
 
-    # Euler angles
     ## controller
 
     # Calculating quartenion error
-
-    q_sp = euler.euler2quat(eulAngSP[0,0], eulAngSP[1,0], eulAngSP[2,0]) # XYZ 
-    #q_state = euler.euler2quat(eulAng[0,0], eulAng[1,0], eulAng[2,0]) # ZYX default rotation
-
+    q_sp = euler.euler2quat(eulAngSP[0,0], eulAngSP[1,0], eulAngSP[2,0]) # XYZ
     axis_error = quar_axis_error(q_sp,q_state)
-    # PID
+    # Cascade PID
 
     rateSP[0,0] = roll_controller.update(axis_error[0], 0.)
     rateSP[1,0] = pitch_controller.update(axis_error[1], 0.)
@@ -223,7 +161,7 @@ for t in time:
     u[3] = r_controller.update(rateSP[2,0], r)
     # ** *TEST VAR ** * %
     # testvar = axis_error; % pid_con(vzSP, vz, Kp_vz, 20);
-
+    ## ESC ##
     PWM = np.dot(u2motor,u)
     # ESC Saturation
 
@@ -231,7 +169,7 @@ for t in time:
         PWM[val] = min(PWM[val], 100)
         PWM[val] = max(PWM[val], 10)
 
-    # Motor dynamics
+    ## Motor dynamics ##
     wCmd = PWM * 4 # mapping ESC to rps experimentally
     # w = wCmd;
     dw = (wCmd - w) / tau
@@ -239,32 +177,27 @@ for t in time:
 
     f_trq = np.dot(prop2f_trqMatrix , np.power(w,2))
 
-    # Euler Newton equations - quad.dynamics
+    ## Euler Newton equations - quad.dynamics ##
     # Quart formulation
-    # Rotation  matrix for transforming body coord to ground coord
-    dcm_body2frame =  quat2rotm( q_state ) #rot_matrix3d(eulAng)
-    #
+    # dcm transforming body coord to ground coord
+    dcm_body2frame =  quat2rotm( q_state )
 
     s = q_state[0]
     v = np.array([q_state[1], q_state[2], q_state[3]])
 
     sdot = -0.5 * (np.dot(v, omega))
-    #print(sdot)
     vdot = 0.5 * (s * omega.reshape(3) + np.cross(omega.reshape(3), v))
     Qdot = np.append(sdot, vdot)
-    #
+
     Xdot = vel
     eulAng_dot = np.dot(dcm_body2frame, omega)
-    fb_temp = np.reshape(F_b[:, i], (3, 1))
-
+    fb_temp = F_b#  np.reshape(F_b[:, i], (3, 1))
     velDot = np.array([[0.], [0.], [g]]) + np.dot(dcm_body2frame,np.array([[0.], [0.], -f_trq[0]]) ) / m - Fd * vel +  fb_temp/ m
     Iomega = np.dot(I, omega)
-    invI =  LA.inv(I) #<<< ---
+    invI =  LA.inv(I) # <<< ---
 
-    #print("Test")
     x_product = np.transpose(np.cross(np.transpose(omega), np.transpose(Iomega)))
-    trqb_temp = np.reshape(Trq_b[:, i],(3,1))
-    #print(np.dot(invI, f_trq[1:4] ))
+    trqb_temp =Trq_b # np.reshape(Trq_b[:, i],(3,1))
     omegaDot = np.dot(invI,(-1.*x_product)) + np.dot(invI, f_trq[1:4] )  + np.dot(invI,trqb_temp)
 
     stateDot =np.vstack([Xdot, eulAng_dot, velDot, omegaDot])
@@ -273,31 +206,24 @@ for t in time:
     state = state + stateDot * dt
     q_next = normalize(q_state + Qdot * dt)
     q_state = q_next
-    #q_next = q_state + Qdot * dt
-    if  sum(q_state - normalize(q_next)) > 0.0001:
-        print("q delta", sum(q_state - normalize(q_next)))
 
     # Accel Sensor
     accel = velDot
     ## Logging sim data
-    log_temp =  np.vstack([state, t, u, PWM,velDot, eulAngSP, rateSP])
-    #print(log_temp)
-    log[:,i] = np.reshape(log_temp,(30))
-    i = i + 1
-
+    var_list = [X , eulAng, vel, omega, t, u, PWM, velDot, eulAngSP, rateSP]
+    logger.update_log(var_list)
 
 # Extracting Sim data
-
-X = log[0:3,:]
-eulAng = log[3:6,:]
-vel = log[6:9,:]
-angvel = log[9:12,:] # omega
-#velDot = log[12:16,:]
-u = log[13:17,:]
-PWM = log[17:21,:]
-velDot = log[21:24,:]
-eulAngSP = log[24:27,:]
-rateSP = log[27:30,:]
+logger.postprocess()
+X = logger.log['X']
+eulAng = logger.log['eulAng']
+vel = logger.log['Xdot']
+angvel = logger.log['omega']
+u = logger.log['u']
+PWM = logger.log['PWM']
+velDot = logger.log['velDot']
+eulAngSP = logger.log['eulAngSP']
+rateSP = logger.log['rateSP']
 
 if (PLOT == True):
     plt.figure(1)
@@ -360,11 +286,11 @@ if (PLOT_TRAJ == True):
     wing1o = np.array([0, 0, 0])
     wing1edge =  np.array([[.5],[-.5],[0.]])
     wing2o = np.array([0, 0, 0])
-    wing2edge = np.array([[.5],[.5],[0.]])  #np.matrix('1; 1; 0', dtype = float)
+    wing2edge = np.array([[.5],[.5],[0.]])
     wing3o = np.array([0, 0, 0])
-    wing3edge = np.array([[-.5],[.5],[0.]]) # np.matrix('-1; 1; 0', dtype = float)
+    wing3edge = np.array([[-.5],[.5],[0.]])
     wing4o = np.array([0, 0, 0])
-    wing4edge = np.array([[-.5],[-.5],[0.]]) # np.matrix('-1; -1; 0', dtype = float)
+    wing4edge = np.array([[-.5],[-.5],[0.]])
 
     def update_traj(num, dat, lines):
         for line in lines:
@@ -385,15 +311,10 @@ if (PLOT_TRAJ == True):
     fig = plt.figure()
     ax = p3.Axes3D(fig)
 
-
-    # Fifty lines of random 3-D lines
     data = X
 
-    #data = [Gen_RandLine(25, 3) for index in range(1)]
     data = np.array(data)
-    #data1  = np.array([data + wing1edge, data + wing3edge])
-    #data2  = np.array([data + wing2edge, data + wing4edge])
-    #print(data1.shape)
+
 
     n_steps = (tend* f)
     plot_frames = (int)(n_steps/50)

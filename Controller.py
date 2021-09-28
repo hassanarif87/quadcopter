@@ -1,6 +1,7 @@
 import numpy as np
-from transforms3d import quaternions
+from transforms3d import quaternions, euler
 
+euler = euler.EulerFuncs('rxyz')
 class PIDController:
     def __init__(self, dt, p_gain, i_gain = 0, d_gain = 0, sat=None, name = 'default'):
         self.name = name
@@ -29,12 +30,12 @@ class PIDController:
         return output
 
     @property
-    def unwind_integral(self):
+    def reset_integral(self):
         self.integrated_error=0
 
 
 def quar_axis_error(q_sp, q_state):
-    # Compute the error in quaternions from the setpoints and robot state in the body frame aligned with x, y, z axis
+    # Compute the error in quaternions from the setpoints and robot state 
 
     #state_quat_conjugate = np.array([a2, -b2, -c2, -d2])
     # Quaternion multiplication q_set * (q_state)' target - state
