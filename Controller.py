@@ -13,7 +13,16 @@ class PIDController:
         self.integrated_error = 0.
         self.prev_error = 0.
     def update(self, sp, fb):
-        # PID
+        """Update gains
+
+        Args:
+            sp (float): reference signal Set point
+            fb (float): Sensor Feedback
+
+        Returns:
+            output (float): command signal
+
+        """
         dt = self.dt
         error = sp - fb
         self.integrated_error = self.integrated_error + (self.prev_error + error) / 2 * dt
@@ -34,10 +43,17 @@ class PIDController:
 
 
 def quar_axis_error(q_sp, q_state):
-    # Compute the error in quaternions from the setpoints and robot state
+    """Compute the error in quaternions from the setpoints and robot state
 
-    #state_quat_conjugate = np.array([a2, -b2, -c2, -d2])
+    Args:
+        q_sp (np.array): Reference signal Set point quaternion
+        q_state (np.array): Sensor Feedback quaternion
+    Returns:
+        exponential angle (np.array)
+    """
+
     # Quaternion multiplication q_set * (q_state)' target - state
+
     q_state_conj = quaternions.qconjugate(q_state)
     q_error =  quaternions.qmult(q_sp,q_state_conj)
 
@@ -50,9 +66,9 @@ def quar_axis_error(q_sp, q_state):
 
 def thrust_tilt(eulAng,PWM_hover):
 
-    phi = eulAng[0,0] # Roll
-    theta = eulAng[1,0] # Pitch
-    psi =  eulAng[2,0]
+    phi = eulAng[0] # Roll
+    theta = eulAng[1] # Pitch
+    psi =  eulAng[2]
     scaling = 1./(abs(np.sqrt(np.cos(phi)*np.cos(theta))))
     scaling = min (scaling, 1.3)
     return PWM_hover*scaling
@@ -86,7 +102,7 @@ class FlightComputer:
         p = sensor_data['p']
         q = sensor_data['q']
         r = sensor_data['r']
-        eulAng = sensor_data['eulAng']
+        eulAng = np.array(euler.quat2euler(q_state))
         rateSP = np.zeros(3)
 
         q_sp, vzSP =  self.target_generator(eulAngSP)
@@ -107,8 +123,8 @@ class FlightComputer:
         PWM = np.dot(self.u2motor,u)
         # ESC Saturation
         for val in range(0, 4):
-            PWM[val] = min(PWM[val], 100)
-            PWM[val] = max(PWM[val], 10)
+            PWM[val] = min(PWM[val], self.esc_max)
+            PWM[val] = max(PWM[val], self.esc_min)
 
         log  = [eulAng, eulAngSP, u, PWM, rateSP]
         return PWM, log

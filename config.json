@@ -6,12 +6,43 @@
             [0,0.014,0],
             [0,0,0.028]
         ],
-        "armLength": 95e-3,
         "S": 0.0019,
         "C_fb" : 1,
         "C_trq_b" : 0,
         "Fd" : 0.569,
+        "points": {
+            "motor1": {
+                "dcm_obj2body" : [[1,0,0],[0,1,0],[0,0,-1]],
+                "location": [95e-3,-95e-3,0]
+            },
+            "motor2": {
+                "dcm_obj2body" : [[1,0,0],[0,1,0],[0,0,-1]],
+                "location": [95e-3,95e-3,0]
+            },
+            "motor3": {
+                "dcm_obj2body" : [[1,0,0],[0,1,0],[0,0,-1]],
+                "location": [-95e-3,95e-3,0]
+            },
+            "motor4": {
+                "dcm_obj2body" : [[1,0,0],[0,1,0],[0,0,-1]],
+                "location": [-95e-3,-95e-3,0]
+            }
+        },
         "propulsion": {
+            "motors": {
+                "motor1": {
+                    "direction" : 1
+                },
+                "motor2": {
+                    "direction" : -1
+                },
+                "motor3": {
+                    "direction" : 1
+                },
+                "motor4": {
+                    "direction" : -1
+                }
+            },
             "Cl":7.4e-5,
             "Cd":6.5e-7,
             "tau": 35e-3,
@@ -32,7 +63,7 @@
             "Kp_vzSAT": 12.0
         },
         "esc_settings":{
-            "Saturation": [20, 100]
+            "Saturation": [10, 100]
         },
         "cmd2motor_map":[
             [1,  1,  1, -1],

@@ -1,6 +1,6 @@
 #Quad rotor simulator
 #
-#by Hassan Arif 20180204
+#by Hassan Arif
 #
 # Top view
 # 1(Cw)2
@@ -13,71 +13,66 @@
 # |
 # |
 # *----y
+import json
 import numpy as np
 from numpy import linalg as LA
 from numpy import sin as sin
 from numpy import cos as cos
 from numpy import tan as tan
-import matplotlib.pyplot as plt
-import mpl_toolkits.mplot3d.axes3d as p3
-import matplotlib.animation as animation
-from Controller import PIDController, quar_axis_error, thrust_tilt, FlightComputer
-from Helper import Logger, normalize, rot_matrix3d, quat2rotm
 from transforms3d import euler
 from copy import deepcopy
 
-import json
+import matplotlib.pyplot as plt
+import mpl_toolkits.mplot3d.axes3d as p3
+import matplotlib.animation as animation
+
+# Simulation Objects
+from Controller import FlightComputer
+from SimObjects.MassObj import MassObj
+from SimObjects.DynamicObj import DynamicObj, SixDofState, ned_gravity
+from SimObjects.Motor import Motor
+from SimObjects.AeroForces import AeroForces
+
+from Helper import Logger, normalize, rot_matrix3d
 
 euler = euler.EulerFuncs('rxyz')
 # Constants
 pi = np.pi
 g = 9.81 # m/s
-rho = 1.1839  # kg/m/m/m ar 25 C
+rho = 1.1839  # kg/m/m/m at 25 C
 
 PLOT = True
 PLOT_TRAJ = True
 #log_variables = ['x_NED', 'e_xyz', 'angle_error', 'x_dot_NED', 'omega', ' u', 'PWM', 'x_ddot_NED', 'e_xyz_sp_NED', 'rate_sp']
-log_variables = ['X', 'eulAng', 'Xdot', 'omega', 't', 'u', 'PWM','velDot', 'eulAngSP', 'rateSP']
+log_variables = ['X', 'eulAng', 'Xdot', 'omega', 't', 'u', 'PWM','velDot', 'eulAngSP', 'rateSP', 'aero_force']
 
 logger = Logger(log_variables)
 
 with open('config.json') as f:
-  config = json.load(f)
+    config = json.load(f)
 
 drone_params = config['drone_params']
 fc_config =  config['fc_config']
+
 # Quad physical parameters
-armLength = drone_params['armLength'] # m
-lp = armLength * sin(pi / 4.)
 m = drone_params['mass']
 I = np.array(drone_params['Inertia'])
 Fd = drone_params['Fd'] # drag force coeff of drone assuming it moves at 2 m / s  at 0 and angle of 0.1 %
+points = drone_params['points']
 
 # Propulsion Parameters
 prop_config = drone_params['propulsion']
+motors = prop_config['motors']
 tau = prop_config['tau']
 Cl = prop_config['Cl'] # Thrust to RPS ^ 2
 Cd = prop_config['Cd']
 pwm2rpm  = prop_config['pwm2rpm']# mapping ESC to rps experimentally
 
-prop2f_trqMatrix = np.array([[Cl, Cl, Cl, Cl],
-                             [Cl * lp, -Cl * lp, -Cl * lp, Cl * lp],
-                             [Cl * lp, Cl * lp, -Cl * lp, -Cl * lp],
-                             [-Cd, Cd, -Cd, Cd]])
-
-# Initialization
-X = np.array([0., 0., 0.]).reshape(3,1)
-eulAng = np.array([0., 0., 0.]).reshape(3,1)
-Xdot = np.array([0., 0., 0.]).reshape(3,1) # zeros(3, 1);
-omega = np.array([0., 0., 0.]).reshape(3,1)
-state =np.vstack([X, eulAng, Xdot, omega])
-
 
 
 # Initial Setpoint
-eulAngSP = np.array([0., -0.2, 0.])
-rateSP = np.array([0., 0., 0.]).reshape(3,1)
-vzSP = 0.
+eulAngSP = np.array([0., -0.06, 0.])
+
 
 # Sim time and Sampling
 f = 1000.
@@ -89,97 +84,108 @@ time = np.linspace(tstart,tend,(int)(tend*f))
 
 n = len(time)
 i = 0
-F_b = np.zeros([3,1])
-Trq_b = np.zeros([3,1])
 
 # Temp calculated here, should done in fc config
 # hovering condition
-wHover = np.array([1, 1, 1, 1]).reshape(4,1) * np.sqrt(m * g / 4. / Cl)
+wHover = np.array([1, 1, 1, 1]) * np.sqrt(m * g / 4. / Cl)
 PWM_hover = wHover / 4.
 w = wHover
 
+## Initialize simulation objects ##
+
+# Drone Dynamic object
+drone_mass_body = MassObj(name='Drone', mass=m, I = I)
+drone_dyn_body = DynamicObj(massobject=drone_mass_body)
+
+# Adding attachment points
+for point_name in points.keys():
+    point = points[point_name]
+    drone_dyn_body.massobj.add_point(name=point_name, loc= point['location'], dcm = point['dcm_obj2body'])
+drone_dyn_body.massobj.add_point(name='Aero', loc= np.zeros(3))
+
+# Adding Motors (force objects)
+motor_objs = []
+for idx, motor_name in enumerate( motors.keys()):
+    motor = Motor(Cl, Cd, tau, pwm2rpm)
+    motor.w= wHover[idx]
+    motor.direction = motors[motor_name]['direction']
+    drone_dyn_body.add_forceobj(
+        point_name = motor_name,
+        force_obj = motor
+    )
+    motor_objs.append(motor)
+
+# Adding AeroForces (force object)
+drone_dyn_body.add_forceobj(
+    point_name = 'Aero',
+    force_obj = AeroForces(Fd)
+)
+# Flight computer
 fc = FlightComputer(dt, fc_config)
 fc.PWM_hover = PWM_hover
 
-q_state = euler.euler2quat(eulAng[0,0], eulAng[1,0], eulAng[2,0])
+state_ = SixDofState.zero_states('ground_ned')
+state_.g_fun = ned_gravity
+#state_.update(state_initial)
+state = np.hstack([state_.vector, w])
 for t in time:
 
     if(t > 3):
         eulAngSP = np.array([-0.1, 0.1, 0])
 
-    X = np.array(state[0:3])
-    eulAng = np.array(state[3:6])
-    vel = np.array(state[6:9])
-    omega = np.array(state[9:12])
-    # Observer
-    C = np.diag([0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1.])
+    x = np.array(state[0:3])
+    q_s = normalize(state[3:7])
+    x_dot = np.array(state[7:10])
+    omega = np.array(state[10:13])
+    w = state[13:17]
+    state_.update(state[0:13])
 
-    y = np.dot(C,state)
+    # Model Updates
+    drone_dyn_body.force_obj_dict['Aero'].update(x_dot)
+    # Derivatives
+    drone_dyn_body.force_obj_dict.keys()
+    w_dot = []
+    for idx, motor in enumerate(motor_objs):
+        w_dot.append(motor.derivative(w[idx]))
+    w_dot = np.array(w_dot)
+    sixdofstate_dot = drone_dyn_body.derivative(state_)
+    # Observer
+    #C = np.diag([0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1.])
+
+    #y = np.dot(C,state)
     # vertcal velocity from barometer and rate in bodyframe
     # Baro
-    vz = state[8]
+    vz = state[9]
 
     # Gyro
-    p = state[9] # y(10)
-    q = state[10] # y(11)
-    r = state[11] # y(12)
+    # Todo convert to body frame
+    p = state[10]
+    q = state[11]
+    r = state[12]
 
     sensor_data = dict(
         vz = vz,
-        q_state = q_state,
+        q_state = q_s,
         p = p,
         q = q,
         r = r,
-        eulAng = eulAng
     )
     ## controller
     PWM, log = fc.update(sensor_data, eulAngSP)
 
+    for PWMcmd, motor in zip(PWM, motor_objs):
+        motor.set_command(PWMcmd)
+
     eulAng, eulAngSP, u, PWM, rateSP = log
 
-    ## Motor dynamics ##
-    PWM = PWM.reshape(4,1)
-    wCmd = PWM * pwm2rpm 
-    # w = wCmd;
-    dw = (wCmd - w) / tau
-    w = w + dw * dt
+    state_dot = np.hstack([sixdofstate_dot, w_dot])
 
-    f_trq = np.dot(prop2f_trqMatrix , np.power(w,2))
+    state = state + state_dot*dt
 
-    ## Euler Newton equations - quad.dynamics ##
-    # Quart formulation
-    # dcm transforming body coord to ground coord
-    dcm_body2frame = quat2rotm( q_state )
+    #logging
+    aero_force = drone_dyn_body.force_obj_dict['Aero'].force
 
-    s = q_state[0]
-    v = np.array([q_state[1], q_state[2], q_state[3]])
-
-    sdot = -0.5 * (np.dot(v, omega))
-    vdot = 0.5 * (s * omega.reshape(3) + np.cross(omega.reshape(3), v))
-    Qdot = np.append(sdot, vdot)
-
-    Xdot = vel
-    eulAng_dot = np.dot(dcm_body2frame, omega)
-    fb_temp = F_b#  np.reshape(F_b[:, i], (3, 1))
-    velDot = np.array([[0.], [0.], [g]]) + np.dot(dcm_body2frame,np.array([[0.], [0.], -f_trq[0]]) ) / m - Fd * vel +  fb_temp/ m
-    Iomega = np.dot(I, omega)
-    invI =  LA.inv(I)
-
-    x_product = np.transpose(np.cross(np.transpose(omega), np.transpose(Iomega)))
-    trqb_temp =Trq_b # np.reshape(Trq_b[:, i],(3,1))
-    omegaDot = np.dot(invI,(-1.*x_product)) + np.dot(invI, f_trq[1:4] )  + np.dot(invI,trqb_temp)
-
-    stateDot =np.vstack([Xdot, eulAng_dot, velDot, omegaDot])
-
-    # Update
-    state = state + stateDot * dt
-    q_next = normalize(q_state + Qdot * dt)
-    q_state = q_next
-
-    # Accel Sensor
-    accel = velDot
-    ## Logging sim data
-    var_list = deepcopy([X , eulAng, vel, omega, t, u, PWM, velDot, eulAngSP, rateSP])
+    var_list = deepcopy([x , eulAng, x_dot, omega, t, u, PWM, state_dot[7:10], eulAngSP, rateSP, aero_force])
     logger.update_log(var_list)
 
 # Extracting Sim data
@@ -193,7 +199,7 @@ PWM = logger.log['PWM']
 velDot = logger.log['velDot']
 eulAngSP = logger.log['eulAngSP']
 rateSP = logger.log['rateSP']
-
+aero_force = logger.log['aero_force']
 if (PLOT == True):
     plt.figure(1)
     plt.plot(time, X[0,:],'r',label='X',linewidth= 0.5)
@@ -243,12 +249,22 @@ if (PLOT == True):
     plt.plot(time, velDot[1,:])
     plt.plot(time, velDot[2,:])
     plt.title('Linear Accel')
+
     plt.figure(7)
     plt.plot(time, rateSP[0,:],label='Roll',linewidth= 0.5)
     plt.plot(time, rateSP[1,:],label='Pitch',linewidth= 0.5)
     plt.plot(time, rateSP[2,:],label='Yaw',linewidth= 0.5)
     plt.legend()
     plt.title('Rate Sp')
+
+    plt.figure(8)
+    plt.plot(time, aero_force[0,:],'r',label='X',linewidth= 0.5)
+    plt.plot(time, aero_force[1,:],'g',label='Y',linewidth= 0.5)
+    plt.plot(time, aero_force[2,:],'b',label='Z',linewidth= 0.5)
+    plt.legend()
+    plt.ylabel("Force(N)")
+    plt.xlabel("Time(s)")
+    plt.title('Aero Forces')
 
 if (PLOT_TRAJ == True):
     ## 3d path
