@@ -66,9 +66,9 @@ def quar_axis_error(q_sp, q_state):
 
 def thrust_tilt(eulAng,PWM_hover):
 
-    phi = eulAng[0,0] # Roll
-    theta = eulAng[1,0] # Pitch
-    psi =  eulAng[2,0]
+    phi = eulAng[0] # Roll
+    theta = eulAng[1] # Pitch
+    psi =  eulAng[2]
     scaling = 1./(abs(np.sqrt(np.cos(phi)*np.cos(theta))))
     scaling = min (scaling, 1.3)
     return PWM_hover*scaling

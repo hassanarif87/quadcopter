@@ -19,6 +19,7 @@ class SixDofState:
     inertial_frame: bool = False
     g_fun: typing.Any = field(repr=False, default=zero_gravity)
     _g: np.array = field(repr=False, default=None)
+
     @property
     def dcm_body2frame(self):
         """ Integration frame of reference"""
@@ -30,6 +31,15 @@ class SixDofState:
             return self.g_fun()
         else:
             return self._g
+    @property
+    def vector(self):
+        return np.hstack([self.x, self.q, self.x_dot, self.omega])
+
+    def update(self, state):
+        self.x = np.array(state[0:3])
+        self.q = np.array(state[3:7])
+        self.x_dot = np.array(state[7:10])
+        self.omega = np.array(state[10:13])
     @classmethod
     def zero_states(cls, frame_name):
         """Class method to craete obejct wiht zero states
@@ -45,7 +55,7 @@ class SixDofState:
         )
 
 
-class DynamicObj():
+class DynamicObj:
     def __init__(self, massobject):
         self.massobj = massobject
         self.force_obj_dict = dict()
@@ -71,17 +81,21 @@ class DynamicObj():
         """
         sum_force_body = np.zeros(3)
         sum_torque_body = np.zeros(3)
-        for key in self.force_obj_dict.keys():
-            force_obj = self.force_obj_dict['key']
-            com = self.massobject.point_lst['com'].com
-            dcm_obj2body = self.massobject.point_lst['com'].dcm_obj2body
+        point_list = self.massobj.points
+        com = point_list['com']
+
+        for name in self.force_obj_dict.keys():
+            force_obj = self.force_obj_dict[name]
+            dcm_obj2body = np.array(point_list[name].dcm_obj2body)
             force_body = force_obj.force
             torque_body = force_obj.moment
-            moment_arm = com - self.point_lst[key]
+            print(torque_body)
+            moment_arm = com.location - point_list[name].location
             torque_body += np.cross(moment_arm, force_body)
-
-            # transform
-        return force_body, torque_body
+            # Transform from force obj to body frame
+            sum_force_body += np.dot(dcm_obj2body, force_body)
+            sum_torque_body += np.dot(dcm_obj2body, torque_body)
+        return sum_force_body, sum_torque_body
 
     def derivative(self, state):
         """Calculates the derivaties of the 6dof Dynamic object
@@ -108,7 +122,9 @@ class DynamicObj():
         x_ddot = state.g + sum_forces / m
 
         # Rotational Dynamics
-        sum_torque = np.dot(dcm_body2frame, sum_torque__body)
+        #sum_torque = np.dot(dcm_body2frame, sum_torque__body)
+        sum_torque =  sum_torque__body
+
         s = q[0]
         v = np.array([q[1], q[2], q[3]])
         sdot = -0.5 * (np.dot(v, omega))
@@ -120,5 +136,7 @@ class DynamicObj():
         x_product = np.cross(omega, Iomega)
         omega_dot = np.dot(invI,(-1.*x_product)) + np.dot(invI, sum_torque)
         state_dot = np.hstack([x_dot, q_dot, x_ddot, omega_dot])
+
+        print("x_ddot: ",x_ddot , " sum_torque: ", sum_torque)
 
         return state_dot
