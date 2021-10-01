@@ -102,7 +102,7 @@ class FlightComputer:
         p = sensor_data['p']
         q = sensor_data['q']
         r = sensor_data['r']
-        eulAng = sensor_data['eulAng']
+        eulAng = np.array(euler.quat2euler(q_state))
         rateSP = np.zeros(3)
 
         q_sp, vzSP =  self.target_generator(eulAngSP)

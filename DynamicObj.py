@@ -89,7 +89,6 @@ class DynamicObj:
             dcm_obj2body = np.array(point_list[name].dcm_obj2body)
             force_body = force_obj.force
             torque_body = force_obj.moment
-            print(torque_body)
             moment_arm = com.location - point_list[name].location
             torque_body += np.cross(moment_arm, force_body)
             # Transform from force obj to body frame
@@ -137,6 +136,5 @@ class DynamicObj:
         omega_dot = np.dot(invI,(-1.*x_product)) + np.dot(invI, sum_torque)
         state_dot = np.hstack([x_dot, q_dot, x_ddot, omega_dot])
 
-        print("x_ddot: ",x_ddot , " sum_torque: ", sum_torque)
 
         return state_dot

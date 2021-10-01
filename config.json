@@ -6,7 +6,6 @@
             [0,0.014,0],
             [0,0,0.028]
         ],
-        "armLength": 95e-3,
         "S": 0.0019,
         "C_fb" : 1,
         "C_trq_b" : 0,
@@ -32,16 +31,16 @@
         "propulsion": {
             "motors": {
                 "motor1": {
-                    "direction" : -1
+                    "direction" : 1
                 },
                 "motor2": {
-                    "direction" : 1
-                },
-                "motor3": {
                     "direction" : -1
                 },
-                "motor4": {
+                "motor3": {
                     "direction" : 1
+                },
+                "motor4": {
+                    "direction" : -1
                 }
             },
             "Cl":7.4e-5,

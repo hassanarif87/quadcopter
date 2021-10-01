@@ -31,6 +31,7 @@ from Controller import FlightComputer
 from MassObj import MassObj
 from DynamicObj import DynamicObj, SixDofState, ned_gravity
 from Motor import Motor
+from AeroForces import AeroForces
 
 from Helper import Logger, normalize, rot_matrix3d
 
@@ -68,34 +69,21 @@ Cd = prop_config['Cd']
 pwm2rpm  = prop_config['pwm2rpm']# mapping ESC to rps experimentally
 
 
-# State Initialization
-X = np.array([0., 0., 0.])
-eulAng = np.array([0., 0., 0.])
-q_state = euler.euler2quat(eulAng[0], eulAng[1], eulAng[2])
-Xdot = np.array([0., 0., 0.])
-omega = np.array([0., 0., 0.])
-w = np.array([0., 0., 0.,0])
-state_initial =np.hstack([X, q_state, Xdot, omega, w])
 
 # Initial Setpoint
-#eulAngSP = np.array([0., -0.2, 0.])
-eulAngSP = np.array([0., 0., 0.])
+eulAngSP = np.array([0., -0.06, 0.])
 
-rateSP = np.array([0., 0., 0.]).reshape(3,1)
-vzSP = 0.
 
 # Sim time and Sampling
 f = 1000.
 dt = 1. / f
 
 tstart = 0.
-tend = 2.
+tend = 6.
 time = np.linspace(tstart,tend,(int)(tend*f))
 
 n = len(time)
 i = 0
-F_b = np.zeros([3,1])
-Trq_b = np.zeros([3,1])
 
 # Temp calculated here, should done in fc config
 # hovering condition
@@ -113,11 +101,12 @@ drone_dyn_body = DynamicObj(massobject=drone_mass_body)
 for point_name in points.keys():
     point = points[point_name]
     drone_dyn_body.massobj.add_point(name=point_name, loc= point['location'], dcm = point['dcm_obj2body'])
+drone_dyn_body.massobj.add_point(name='Aero', loc= np.zeros(3))
 
 # Adding Motors (force objects)
 motor_objs = []
 for idx, motor_name in enumerate( motors.keys()):
-    motor = deepcopy(Motor(Cl, Cd, tau, pwm2rpm))
+    motor = Motor(Cl, Cd, tau, pwm2rpm)
     motor.w= wHover[idx]
     motor.direction = motors[motor_name]['direction']
     drone_dyn_body.add_forceobj(
@@ -126,13 +115,18 @@ for idx, motor_name in enumerate( motors.keys()):
     )
     motor_objs.append(motor)
 
+# Adding AeroForces (force object)
+drone_dyn_body.add_forceobj(
+    point_name = 'Aero',
+    force_obj = AeroForces(Fd)
+)
 # Flight computer
 fc = FlightComputer(dt, fc_config)
 fc.PWM_hover = PWM_hover
 
 state_ = SixDofState.zero_states('ground_ned')
 state_.g_fun = ned_gravity
-state_.update(state_initial)
+#state_.update(state_initial)
 state = np.hstack([state_.vector, w])
 for t in time:
 
@@ -145,6 +139,17 @@ for t in time:
     omega = np.array(state[10:13])
     w = state[13:17]
     state_.update(state[0:13])
+
+    # Model Updates
+    drone_dyn_body.force_obj_dict['Aero'].update(x_dot)
+
+    # Derivatives
+    drone_dyn_body.force_obj_dict.keys()
+    w_dot = []
+    for idx, motor in enumerate(motor_objs):
+        w_dot.append(motor.derivative(w[idx]))
+    w_dot = np.array(w_dot)
+    sixdofstate_dot = drone_dyn_body.derivative(state_)
     # Observer
     #C = np.diag([0., 0., 0., 0., 0., 0., 0., 0., 1., 1., 1., 1.])
 
@@ -161,11 +166,10 @@ for t in time:
 
     sensor_data = dict(
         vz = vz,
-        q_state = q_state,
+        q_state = q_s,
         p = p,
         q = q,
         r = r,
-        eulAng = eulAng
     )
     ## controller
     PWM, log = fc.update(sensor_data, eulAngSP)
@@ -174,13 +178,6 @@ for t in time:
         motor.set_command(PWMcmd)
 
     eulAng, eulAngSP, u, PWM, rateSP = log
-
-    drone_dyn_body.force_obj_dict.keys()
-    w_dot = []
-    for idx, motor in enumerate(motor_objs):
-        w_dot.append(motor.derivative(w[idx]))
-    w_dot = np.array(w_dot)
-    sixdofstate_dot = drone_dyn_body.derivative(state_)
 
     state_dot = np.hstack([sixdofstate_dot, w_dot])
 
