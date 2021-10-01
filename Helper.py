@@ -42,7 +42,6 @@ def theta_wraper(theta):
         theta = theta + 2 * np.pi
     return theta
 
-
 class Logger:
     def __init__(self, log_name_lst) -> None:
         self.log_name_lst = log_name_lst
