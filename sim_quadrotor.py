@@ -44,7 +44,7 @@ rho = 1.1839  # kg/m/m/m at 25 C
 PLOT = True
 PLOT_TRAJ = True
 #log_variables = ['x_NED', 'e_xyz', 'angle_error', 'x_dot_NED', 'omega', ' u', 'PWM', 'x_ddot_NED', 'e_xyz_sp_NED', 'rate_sp']
-log_variables = ['X', 'eulAng', 'Xdot', 'omega', 't', 'u', 'PWM','velDot', 'eulAngSP', 'rateSP']
+log_variables = ['X', 'eulAng', 'Xdot', 'omega', 't', 'u', 'PWM','velDot', 'eulAngSP', 'rateSP', 'aero_force']
 
 logger = Logger(log_variables)
 
@@ -142,7 +142,6 @@ for t in time:
 
     # Model Updates
     drone_dyn_body.force_obj_dict['Aero'].update(x_dot)
-
     # Derivatives
     drone_dyn_body.force_obj_dict.keys()
     w_dot = []
@@ -182,7 +181,11 @@ for t in time:
     state_dot = np.hstack([sixdofstate_dot, w_dot])
 
     state = state + state_dot*dt
-    var_list = deepcopy([x , eulAng, x_dot, omega, t, u, PWM, state_dot[7:10], eulAngSP, rateSP])
+
+    #logging
+    aero_force = drone_dyn_body.force_obj_dict['Aero'].force
+
+    var_list = deepcopy([x , eulAng, x_dot, omega, t, u, PWM, state_dot[7:10], eulAngSP, rateSP, aero_force])
     logger.update_log(var_list)
 
 # Extracting Sim data
@@ -196,7 +199,7 @@ PWM = logger.log['PWM']
 velDot = logger.log['velDot']
 eulAngSP = logger.log['eulAngSP']
 rateSP = logger.log['rateSP']
-
+aero_force = logger.log['aero_force']
 if (PLOT == True):
     plt.figure(1)
     plt.plot(time, X[0,:],'r',label='X',linewidth= 0.5)
@@ -246,12 +249,22 @@ if (PLOT == True):
     plt.plot(time, velDot[1,:])
     plt.plot(time, velDot[2,:])
     plt.title('Linear Accel')
+
     plt.figure(7)
     plt.plot(time, rateSP[0,:],label='Roll',linewidth= 0.5)
     plt.plot(time, rateSP[1,:],label='Pitch',linewidth= 0.5)
     plt.plot(time, rateSP[2,:],label='Yaw',linewidth= 0.5)
     plt.legend()
     plt.title('Rate Sp')
+
+    plt.figure(8)
+    plt.plot(time, aero_force[0,:],'r',label='X',linewidth= 0.5)
+    plt.plot(time, aero_force[1,:],'g',label='Y',linewidth= 0.5)
+    plt.plot(time, aero_force[2,:],'b',label='Z',linewidth= 0.5)
+    plt.legend()
+    plt.ylabel("Force(N)")
+    plt.xlabel("Time(s)")
+    plt.title('Aero Forces')
 
 if (PLOT_TRAJ == True):
     ## 3d path
