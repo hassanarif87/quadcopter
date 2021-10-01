@@ -28,10 +28,10 @@ import matplotlib.animation as animation
 
 # Simulation Objects
 from Controller import FlightComputer
-from MassObj import MassObj
-from DynamicObj import DynamicObj, SixDofState, ned_gravity
-from Motor import Motor
-from AeroForces import AeroForces
+from SimObjects.MassObj import MassObj
+from SimObjects.DynamicObj import DynamicObj, SixDofState, ned_gravity
+from SimObjects.Motor import Motor
+from SimObjects.AeroForces import AeroForces
 
 from Helper import Logger, normalize, rot_matrix3d
 
