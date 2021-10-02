@@ -151,16 +151,13 @@ for t in time:
 
     # Gyro
     # TODO: convert to body frame
-    p = state[10]
-    q = state[11]
-    r = state[12]
-
+    omega_body = np.dot( state_.dcm_body2frame.transpose(), omega)
     sensor_data = dict(
         vz = vz,
         q_state = q_s,
-        p = p,
-        q = q,
-        r = r,
+        p = omega_body[0],
+        q = omega_body[1],
+        r = omega_body[2]
     )
     ## controller
     PWM, log = fc.update(sensor_data, eulAngSP)

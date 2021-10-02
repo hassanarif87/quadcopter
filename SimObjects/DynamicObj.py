@@ -121,8 +121,8 @@ class DynamicObj:
         x_ddot = state.g + sum_forces / m
 
         # Rotational Dynamics
-        #sum_torque = np.dot(dcm_body2frame, sum_torque__body)
-        sum_torque =  sum_torque__body
+        sum_torque = np.dot(dcm_body2frame, sum_torque__body)
+        # sum_torque =  sum_torque__body
 
         s = q[0]
         v = np.array([q[1], q[2], q[3]])
