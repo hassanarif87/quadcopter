@@ -1,5 +1,5 @@
 import numpy as np
-from TemplateObj import ForceObjTemplate
+from SimObjects.TemplateObj import ForceObjTemplate
 
 class AeroForces(ForceObjTemplate):
     def __init__(self, Fd):

@@ -1,12 +1,12 @@
 class ForceObjTemplate:
     @property
     def force():
-        pass
+        NotImplementedError
     @property
     def moment():
-        pass
+        NotImplementedError
 
 class DynamicObjTemplate:
     def derivative(state):
-        pass
+        NotImplementedError
 

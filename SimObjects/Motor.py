@@ -1,5 +1,5 @@
 import numpy as np
-from TemplateObj import ForceObjTemplate, DynamicObjTemplate
+from SimObjects.TemplateObj import ForceObjTemplate, DynamicObjTemplate
 
 class Motor(ForceObjTemplate, DynamicObjTemplate):
     def __init__(self, Cl, Cd, tau, pwn2rpm):
