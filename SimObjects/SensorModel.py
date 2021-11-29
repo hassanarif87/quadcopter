@@ -17,9 +17,9 @@ import numpy as np
 #                     'std': np.array([0.1, 0.1, 0.1])}
 class Gyroscope:
     def __init__(self,dt, arw=0) -> None:
-        self.bias_instability_noise_mu = np.deg2rad(10.0)/3600.0 #arw
+        self.bias_instability_noise_mu = np.deg2rad(100.0)/3600.0 #arw
         self.constant_bias = np.zeros(3)
-        self.noise_mu =  0.05 / 60.0 #0.1
+        self.noise_mu =  0.05 / 60.0 # 0.1 # zero mean white noise
         self.dt = dt
         self.vairing_bias = np.zeros(3)
     def update(self, state):
@@ -34,7 +34,7 @@ class Gyroscope:
 
 class Accelometer:
     def __init__(self,vrw=0) -> None:
-        self.noise_mu = 0.05 / 60.0
+        self.noise_mu = 0.05 / 60.0  # 0.1 # zero mean white noise
         self.sensor_bias = np.zeros(3)
 
     def update(self, state, accel):
@@ -47,7 +47,7 @@ class Accelometer:
 class Magnetometer:
     def __init__(self) -> None:
         self.si = np.eye(3) + np.random.randn(3, 3)*0.0 # is the soft iron matrix
-        self.hi = np.array([10.0, 10.0, 10.0])*0.0 # the hard iron consta bias
+        self.hi = np.array([10.0, 10.0, 10.0])*0.0 # the hard iron constant bias
         self.std =  np.array([0.1, 0.1, 0.1]) # white noise
 
     def update(self,state):

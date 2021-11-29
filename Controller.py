@@ -2,6 +2,17 @@ import numpy as np
 from transforms3d import quaternions, euler
 
 euler = euler.EulerFuncs('rxyz')
+
+def skew_symmetric(vec):
+    mat = np.array(
+        [
+            [0, -vec[2], vec[1]],
+            [-vec[2], 0 , vec[0]],
+            [vec[1], vec[0], 0]
+        ]
+    )
+
+    return mat
 class PIDController:
     def __init__(self, dt, p_gain, i_gain = 0, d_gain = 0, sat=None, name = 'default'):
         self.name = name
@@ -128,3 +139,18 @@ class FlightComputer:
 
         log  = [eulAng, eulAngSP, u, PWM, rateSP]
         return PWM, log
+
+
+class KalmanFilter:
+    def __init__(self):
+        self.P = np.zeros([4,4])
+
+    def _est_predict(self, k_state):
+        pass
+    def _est_update(self):
+        pass
+    def update(self):
+        pass
+
+class AttitudeEstimation:
+    pass
