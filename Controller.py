@@ -153,4 +153,9 @@ class KalmanFilter:
         pass
 
 class AttitudeEstimation:
-    pass
+    def __init__(self):
+        kf= None
+        gyto_in = None
+        accel_in = None
+    def update_attitude():
+        pass
